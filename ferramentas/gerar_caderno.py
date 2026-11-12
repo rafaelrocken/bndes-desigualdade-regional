@@ -1,0 +1,937 @@
+"""Gera o caderno de cálculo (`caderno.ipynb`) do trabalho final da IA003.
+
+O caderno é escrito aqui, célula por célula, para que o texto didático e o código
+fiquem em um único arquivo revisável e o `.ipynb` saia sempre sem saídas gravadas.
+Os ids das células são fixos (c000, c001, ...), então regerar não muda o arquivo à toa.
+
+Uso, a partir da pasta do app:
+    python -X utf8 ferramentas/gerar_caderno.py
+"""
+from pathlib import Path
+
+import nbformat
+from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
+
+SAIDA = Path(__file__).resolve().parent.parent / "caderno.ipynb"
+
+CELULAS: list = []
+
+
+def md(texto: str) -> None:
+    """Acrescenta uma célula de texto (markdown)."""
+    CELULAS.append(new_markdown_cell(texto.strip("\n")))
+
+
+def cod(texto: str) -> None:
+    """Acrescenta uma célula de código."""
+    CELULAS.append(new_code_cell(texto.strip("\n")))
+
+
+# =====================================================================================
+# Abertura
+# =====================================================================================
+
+md(r"""
+# Caderno de cálculo: o BNDES compensa a desigualdade regional?
+
+Este caderno faz, passo a passo, todas as contas do trabalho final da IA003. É o lugar para estudar: cada número que aparece nos painéis e no vídeo nasce aqui, com a explicação ao lado.
+
+**Como ler.** Cada seção abre com um texto curto, ligado ao item do enunciado que ela cumpre, e depois vem a célula de código que calcula. Rode as células de cima para baixo. O código só chama funções do módulo `calculo.py`, o mesmo que o aplicativo usa, então os números do caderno e dos painéis nunca divergem. Os "itens" citados são os números do enunciado.
+
+| Seção | O que faz | Item do enunciado |
+|---|---|---|
+| 1 | A base: fonte, linhas e colunas | Item 2, escolha da base |
+| 2 | População, unidade amostral e regras de agregação | Item 2, população e variáveis |
+| 3 | Tamanho da amostra, conta passo a passo | Item 3, dimensionamento |
+| 4 | Sorteio e semente | Item 3, seleção da amostra |
+| 5 | Descritiva: população × amostra | Item 4, Painéis 1 e 2 |
+| 6 | H1 e H2: proporção | Item 4a, Painel 3 |
+| 7 | H3, H4 e H5: médias | Item 4b, Painel 3 |
+| 8 | Comparação com a população | Item 4, comparação e interpretação |
+| 9 | Limitações | Item 4, limitações e variabilidade amostral |
+
+**Sobre o matplotlib.** Os gráficos deste caderno (o QQ-plot, por exemplo) usam o `matplotlib`, que só o caderno precisa. O aplicativo não o usa, e por isso ele não está no `requirements.txt`. Para rodar o caderno em outro computador, instale também `matplotlib` e `jupyter`.
+""")
+
+md(r"""
+## Vocabulário em uma tabela
+
+Estes termos voltam o caderno inteiro. Volte aqui sempre que um deles embaralhar.
+
+| Termo | Em uma frase |
+|---|---|
+| **População** | todos os 6.320 contratos do estudo |
+| **Amostra** | os 913 contratos sorteados |
+| **Parâmetro** | o número verdadeiro da população (π, δ). Em geral desconhecido; aqui, como temos a população inteira, dá para calculá-lo e conferir |
+| **Estimativa** | o número calculado na amostra para estimar o parâmetro |
+| **H0 e hipótese alternativa** | H0 é o valor de referência ("nada de diferente"); a alternativa é o que a amostra teria de mostrar para duvidarmos de H0 |
+| **α (nível de significância)** | o risco de rejeitar uma H0 verdadeira que aceitamos de antemão: 0,05 |
+| **Estatística de teste** | quão longe a amostra está de H0, medido em erros padrão |
+| **Valor-p** | se H0 fosse verdadeira, a probabilidade de uma amostra dar uma estatística tão ou mais extrema que a nossa. Não é a probabilidade de H0 ser verdadeira |
+| **IC de 95%** | um intervalo calculado por um método que, em 95% das amostras possíveis, produz um intervalo que contém o valor verdadeiro |
+| **Erro tipo I** | rejeitar uma H0 que é verdadeira |
+| **Erro tipo II** | não rejeitar uma H0 que é falsa |
+| **Poder** | a probabilidade de rejeitar H0 quando ela é falsa (um menos a chance de erro tipo II) |
+
+**Atenção ao nome "H1".** Neste trabalho, H1 a H5 são os cinco testes (H1 é o primeiro teste), não "a hipótese alternativa". Quando precisarmos da alternativa, escrevemos "hipótese alternativa".
+""")
+
+md(r"""
+## Preparação
+
+A célula abaixo acha a pasta do aplicativo, carrega a população e a amostra que estão salvas em `dados/` e define alguns ajudantes de formatação (vírgula decimal, por exemplo). Ela **não sorteia nada**: a amostra é lida do arquivo, a mesma que os painéis usam.
+""")
+
+cod(r'''
+import json
+import sys
+from pathlib import Path
+
+# Acha a pasta do aplicativo (onde mora calculo.py), rodando de lá ou da pasta ao lado.
+RAIZ = Path.cwd() if (Path.cwd() / "calculo.py").exists() else Path.cwd().parent
+sys.path.insert(0, str(RAIZ))
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from IPython.display import display
+from scipy import stats
+
+import calculo as c
+
+pop = pd.read_parquet(RAIZ / "dados" / "populacao.parquet")
+amostra = pd.read_parquet(RAIZ / "dados" / "amostra.parquet")
+meta = json.loads((RAIZ / "dados" / "metadados.json").read_text(encoding="utf-8"))
+
+ALFA = 0.05                                      # nível de significância, fixado antes do sorteio
+COR = {"N+NE": "#D55E00", "Demais": "#0072B2"}   # as mesmas cores em todo o trabalho
+HIP = {h["id"]: h for h in c.HIPOTESES}          # as cinco hipóteses gravadas antes do sorteio
+
+pd.set_option("display.max_columns", None)
+pd.set_option("display.width", 200)
+pd.set_option("display.max_colwidth", None)
+
+
+def br(x, casas=2):
+    """Número no formato brasileiro: vírgula decimal e ponto de milhar."""
+    return f"{x:,.{casas}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def pct(x, casas=1):
+    """Proporção (0 a 1) escrita como porcentagem."""
+    return br(100 * x, casas) + "%"
+
+
+def fp(p):
+    """Valor-p: quatro casas decimais, ou notação científica se for minúsculo."""
+    return f"{p:.1e}".replace(".", ",") if p < 1e-4 else br(p, 4)
+
+
+def faixa(ic, formatar):
+    """Intervalo escrito como [inferior; superior]."""
+    return f"[{formatar(ic[0])}; {formatar(ic[1])}]"
+
+
+def decisao_texto(p_valor, alfa=ALFA):
+    """A decisão do teste, em português: sempre 'rejeita' ou 'não rejeita' H0."""
+    if p_valor < alfa:
+        return f"rejeita H0 (p {fp(p_valor)} < {br(alfa)})"
+    return f"não rejeita H0 (p {fp(p_valor)} ≥ {br(alfa)})"
+
+
+print(f"Pasta do app: {RAIZ.name} | população: {br(len(pop), 0)} contratos | amostra: {br(len(amostra), 0)} contratos")
+''')
+
+# =====================================================================================
+# 1. A base
+# =====================================================================================
+
+md(r"""
+## 1. A base: fonte, linhas e colunas
+
+*Item 2 do enunciado: escolha da base de dados.* O enunciado pede a fonte e o link, o contexto e o objetivo da base, o número de observações e de variáveis, a população e a unidade amostral e a descrição das variáveis. Esta seção responde aos três primeiros pontos; a seção 2 responde ao resto.
+
+**Fonte.** Portal de Dados Abertos do BNDES, conjunto "Operações de Financiamento", arquivo das operações não automáticas. A fonte é oficial e pública, e o link está na tabela abaixo.
+
+**Contexto.** O BNDES é o banco público federal de fomento. Em cada financiamento, o banco assina um **contrato** com a empresa. O contrato se divide em **subcréditos**, cada um com valor, custo financeiro (a taxa de juros) e prazo próprios. As operações **não automáticas** são as que o próprio BNDES analisa e aprova, contrato a contrato. As automáticas passam por bancos repassadores e não estão nesta base.
+
+**Objetivo da base e do nosso uso.** A base existe para dar transparência às operações do banco. Nós a usamos para testar uma promessa do BNDES, a de contribuir para reduzir as desigualdades regionais: para onde vão os contratos, e em que condições?
+""")
+
+cod(r'''
+base_bruta = pd.Series(
+    {
+        "Fonte": meta["fonte_nome"],
+        "Página do conjunto": meta["fonte_url"],
+        "Atualizada no portal em": meta["atualizado_no_portal"],
+        "Baixada em": meta["baixado_em"],
+        "Linhas da base bruta (subcréditos)": br(meta["linhas_base"], 0),
+        "Colunas da base bruta": br(meta["colunas_base"], 0),
+    },
+    name="Base bruta",
+)
+display(base_bruta.to_frame())
+''')
+
+md(r"""
+**Observações e variáveis.** A base bruta tem **uma linha por subcrédito**: 24.035 linhas e 34 colunas. O arquivo bruto não está neste repositório (tem 20 MB e é público na fonte). O que está em `dados/` é a população já agregada em contratos e a amostra, que são o assunto das próximas seções.
+""")
+
+# =====================================================================================
+# 2. População e regras de agregação
+# =====================================================================================
+
+md(r"""
+## 2. População, unidade amostral e regras de agregação
+
+*Item 2 do enunciado: população de interesse, unidade amostral e descrição das variáveis.*
+
+**Unidade amostral: o contrato.** A pergunta do trabalho é sobre decisões de financiamento. Um contrato com 99 subcréditos não pode pesar 99 vezes, então juntamos os subcréditos em contratos: **uma linha por contrato**.
+
+**População: N = 6.320 contratos.** São os contratos de modalidade reembolsável, com UF definida (saem as operações interestaduais, "IE") e contratados de 2002 a 2025.
+
+**Região e grupo.** Cada contrato fica na região (N, NE, CO, SE, S) da UF que concentra a maior parte do valor. Para as comparações, juntamos em dois grupos: **N+NE** (Norte e Nordeste) e **Demais** (Centro-Oeste, Sudeste e Sul).
+
+**Regras de agregação** (como vários subcréditos viram uma linha):
+
+| Variável do contrato | Regra |
+|---|---|
+| região e grupo | a da UF com a maior parte do valor contratado |
+| valor contratado | soma dos subcréditos |
+| spread (juros acima do custo financeiro, % ao ano) | média dos juros ponderada pelo valor, só entre os subcréditos indexados em **reais** (TJLP e variantes, TLP, Selic, IPCA, TR e CDI). Ficam de fora os subcréditos em moeda estrangeira, a taxa fixa e os sem custo, porque seus juros não são comparáveis com um spread sobre TJLP. Contrato sem nenhum subcrédito em reais fica **sem spread** (fora de H3 e H4) |
+| prazo de amortização (meses) | média ponderada pelo valor, entre todos os subcréditos |
+| porte, setor, data, UF, CNPJ | os do subcrédito de maior valor |
+
+**Variáveis usadas e para quê:**
+
+| Variável | Tipo | Papel no trabalho |
+|---|---|---|
+| `grupo` (N+NE ou Demais) | qualitativa | evento de interesse de H1 e H2 (o contrato ser N+NE) e divisão dos grupos em H3 a H5 |
+| `spread` | quantitativa (% ao ano) | H3 e H4 |
+| `prazo_amortizacao` | quantitativa (meses) | H5 |
+| `valor_contratado` | quantitativa (R$) | peso do contrato; limitação da análise |
+| `setor`, `porte` | qualitativas | composição dos grupos na descritiva |
+| `uf`, `regiao` | qualitativas | geografia |
+| `data`, `ano` | data e inteiro | quando o contrato foi assinado |
+| `n_subcreditos`, `cnpj`, `numero_do_contrato` | contagem e identificadores | rastrear o contrato até a base bruta |
+""")
+
+cod(r'''
+N = len(pop)
+print(f"População: N = {br(N, 0)} contratos (uma linha por contrato), {pop.shape[1]} colunas")
+mais_de_um = int((pop["n_subcreditos"] > 1).sum())
+print(f"Contratos com mais de um subcrédito: {br(mais_de_um, 0)} ({pct(mais_de_um / N)}). É por isso que a agregação importa.")
+display(pop.head(5))
+
+tem_spread = pop["spread"].notna()
+por_grupo = pd.DataFrame(
+    {
+        "contratos": pop.groupby("grupo").size(),
+        "com spread em reais": pop[tem_spread].groupby("grupo").size(),
+        "sem spread em reais": pop[~tem_spread].groupby("grupo").size(),
+    }
+).reindex(["N+NE", "Demais"])
+por_grupo["% dos contratos"] = (por_grupo["contratos"] / N).map(lambda v: pct(v, 2))
+por_grupo.loc["Total"] = [por_grupo[col].sum() if col != "% dos contratos" else "100,00%" for col in por_grupo.columns]
+display(por_grupo)
+
+por_regiao = pop.groupby("regiao").size().reindex(["N", "NE", "CO", "SE", "S"])
+display(pd.DataFrame({"contratos": por_regiao, "% dos contratos": (por_regiao / N).map(lambda v: pct(v, 2))}).T)
+''')
+
+md(r"""
+**Como ler.** A primeira tabela mostra que o grupo N+NE é bem menor que o Demais. Isso importa depois: grupos pequenos dão estimativas mais incertas. A coluna "sem spread em reais" é o aviso do desenho: esses contratos ficam fora de H3 e H4, mas continuam em H1, H2 e H5.
+""")
+
+# =====================================================================================
+# 3. Tamanho da amostra
+# =====================================================================================
+
+md(r"""
+## 3. Tamanho da amostra, passo a passo
+
+*Item 3 do enunciado: calcular o tamanho necessário da amostra e justificar os parâmetros.*
+
+A fórmula do enunciado, com correção para população finita:
+
+$$ n_0 = \frac{z^2\,\pi\,(1-\pi)}{E^2} \qquad\text{e}\qquad n = \frac{n_0}{1 + n_0/N} $$
+
+Três escolhas, cada uma com sua justificativa:
+
+- **Confiança de 95%, logo z = 1,96.** É o padrão em pesquisa. O z é o ponto da curva normal que deixa 2,5% de área em cada cauda, de modo que 95% ficam no meio.
+- **Margem de erro E = 3 pontos percentuais (0,03).** É o erro máximo que aceitamos, para mais ou para menos, ao estimar uma proporção. Três pontos dão um intervalo estreito o bastante para dizer "perto" ou "longe" das réguas do trabalho.
+- **π = 0,5.** O produto π(1 − π) é o maior possível (0,25) quando π = 0,5. Ou seja, 0,5 dá o maior n que a fórmula pode pedir. É o caso mais conservador, adequado porque não supomos nada sobre a proporção antes de ver os dados.
+
+**Por que a correção?** O n0 vale para uma população gigante. Aqui N = 6.320 e vamos sortear uma fração grande dela (cerca de 14%). Sortear sem reposição de uma população pequena dá mais informação por contrato sorteado, então o n necessário **cai**. Arredondamos para cima porque o n precisa ser inteiro e a margem não pode passar de 3 pontos.
+""")
+
+cod(r'''
+E, PI, CONF = meta["E"], meta["pi"], meta["confianca"]
+res = c.tamanho_amostra(N, E=E, confianca=CONF, pi=PI)
+z, n0, n = res["z"], res["n0"], res["n"]
+
+passos = pd.DataFrame(
+    [
+        ("z (95% de confiança)", br(z, 4)),
+        ("z²", br(z**2, 4)),
+        ("π (1 − π)", br(PI * (1 - PI), 4)),
+        ("E²", br(E**2, 4)),
+        ("n0 = z² · π (1 − π) / E²", br(n0, 1)),
+        ("n0 / N", br(n0 / N, 4)),
+        ("1 + n0 / N", br(1 + n0 / N, 4)),
+        ("n0 / (1 + n0 / N), antes de arredondar", br(n0 / (1 + n0 / N), 2)),
+        ("n, arredondado para cima", br(n, 0)),
+    ],
+    columns=["passo", "valor"],
+).set_index("passo")
+display(passos)
+
+assert n == meta["n"] == 913
+print(f"Fração da população que será sorteada: n / N = {pct(n / N)}")
+
+# O que acontece se mudarmos os parâmetros? (só para entender a fórmula)
+cenarios = []
+for E_, pi_ in [(0.03, 0.5), (0.05, 0.5), (0.02, 0.5), (0.03, 0.2)]:
+    r_ = c.tamanho_amostra(N, E=E_, pi=pi_)
+    cenarios.append(
+        {"margem de erro E": pct(E_, 0), "π": br(pi_, 1), "n0 (sem correção)": br(r_["n0"], 0), "n (com correção)": br(r_["n"], 0)}
+    )
+display(pd.DataFrame(cenarios))
+''')
+
+md(r"""
+**Como ler.** O n final é **913 contratos**. A segunda tabela mostra a lógica da fórmula: margem menor exige amostra maior; um π mais distante de 0,5 exige amostra menor (por isso 0,5 é o "pior caso"). A calculadora de tamanho amostral sugerida no enunciado (USP/Bauru) usa esta mesma fórmula, então vale conferir o 913 nela antes de gravar o vídeo.
+""")
+
+# =====================================================================================
+# 4. Sorteio e semente
+# =====================================================================================
+
+md(r"""
+## 4. Sorteio e semente
+
+*Item 3 do enunciado: selecionar a amostra aleatória simples e documentar o procedimento.*
+
+**Amostragem aleatória simples (AAS) sem reposição.** Todo contrato tem a mesma chance de entrar na amostra, e nenhum entra duas vezes. O computador sorteia 913 dos 6.320 contratos com a função `sample` do pandas (`replace=False`).
+
+**Semente = 20261112.** Os números "aleatórios" do computador vêm de uma fórmula, e a semente é o ponto de partida dela. Com a mesma semente, qualquer pessoa repete o mesmo sorteio. Escolhemos a data do dia do sorteio (12/11/2026) e a gravamos, junto com as hipóteses, em um commit **antes** de sortear (o hash está em `dados/metadados.json`). Assim, o resultado do sorteio não pôde influenciar as hipóteses.
+
+**Ordenar antes de sortear.** A população é ordenada pelo número do contrato antes do sorteio, para que a ordem das linhas no arquivo não mude quem é sorteado.
+
+**Este caderno não sorteia de novo.** Ele carrega a amostra salva em `dados/amostra.parquet`, a mesma dos painéis. Para provar que ela é a amostra certa, a célula abaixo refaz o sorteio com a semente e confere que saem exatamente os mesmos contratos.
+""")
+
+cod(r'''
+refeita = c.sortear_amostra(pop, n=meta["n"], semente=meta["semente"])
+iguais = set(refeita["numero_do_contrato"]) == set(amostra["numero_do_contrato"])
+
+print(f"Semente: {meta['semente']} | commit do pré-registro: {meta['commit_pre_registro'][:7]}")
+print(f"A amostra salva tem {br(len(amostra), 0)} contratos, todos distintos: {amostra['numero_do_contrato'].is_unique}")
+print(f"O sorteio refeito com a semente dá os mesmos contratos? {iguais}")
+assert iguais
+
+tamanho_grupos = pd.DataFrame(
+    {
+        "contratos na amostra": amostra.groupby("grupo").size(),
+        "com spread em reais": amostra.groupby("grupo")["spread"].count(),
+        "com prazo de amortização": amostra.groupby("grupo")["prazo_amortizacao"].count(),
+    }
+).reindex(["N+NE", "Demais"])
+display(tamanho_grupos)
+''')
+
+md(r"""
+**Como ler.** A tabela mostra quantos contratos de cada grupo o sorteio trouxe, já separando os que têm spread em reais (os únicos usados em H3 e H4). O desenho previa grupos acima de 30 contratos; a conferência formal está na seção 7.
+""")
+
+# =====================================================================================
+# 5. Descritiva
+# =====================================================================================
+
+md(r"""
+## 5. Descritiva: população × amostra
+
+*Item 4 do enunciado: Painel 1 (população) e Painel 2 (amostra).* As mesmas medidas nos dois conjuntos, lado a lado. A pergunta é: **a amostra é um retrato fiel da população?** Diferenças pequenas são esperadas, porque cada sorteio traz um pouco de acaso.
+
+**Variáveis qualitativas** (região, setor, porte): olhamos as proporções.
+
+**Variáveis quantitativas** (spread e prazo): olhamos as medidas de resumo.
+
+- **Média**: a soma dividida pelo número de contratos. Valores muito altos puxam a média para cima.
+- **Mediana**: o contrato do meio; metade dos contratos fica abaixo dela. Quando a média é bem maior que a mediana, a distribuição tem cauda longa para a direita.
+- **Desvio padrão**: o quanto os valores costumam se afastar da média.
+- **Q1 e Q3** (quartis): 25% e 75% dos contratos ficam abaixo deles. A distância entre os dois mostra onde mora a metade "do meio" dos dados.
+""")
+
+cod(r'''
+def proporcoes(coluna):
+    """Proporção de cada categoria na população e na amostra, da maior para a menor na população."""
+    t = pd.DataFrame(
+        {
+            "população": pop[coluna].value_counts(normalize=True),
+            "amostra": amostra[coluna].value_counts(normalize=True),
+        }
+    ).fillna(0.0)
+    return t.sort_values("população", ascending=False)
+
+
+def formatar_proporcoes(t):
+    saida = t.map(lambda v: pct(v, 1))
+    saida["diferença (p.p.)"] = (100 * (t["amostra"] - t["população"])).map(lambda v: br(v, 1))
+    return saida
+
+
+categorias = {coluna: proporcoes(coluna) for coluna in ["grupo", "regiao", "setor", "porte"]}
+display(pd.concat({coluna: formatar_proporcoes(t) for coluna, t in categorias.items()}))
+
+# Gráfico: contratos por região, população × amostra (barras começando em zero).
+reg = categorias["regiao"]
+posicao = np.arange(len(reg))
+fig, ax = plt.subplots(figsize=(8, 4.2))
+ax.bar(posicao - 0.2, 100 * reg["população"], width=0.4, color="#4D4D4D", label="População (N = 6.320)")
+ax.bar(posicao + 0.2, 100 * reg["amostra"], width=0.4, color="#A6A6A6", label="Amostra (n = 913)")
+ax.set_xticks(posicao, reg.index)
+ax.set_ylim(bottom=0)
+ax.set_xlabel("Região")
+ax.set_ylabel("% dos contratos")
+ax.set_title("Contratos por região: população × amostra")
+ax.legend()
+fig.text(0.01, 0.01, "Fonte: BNDES, operações não automáticas (dados abertos), baixado em 12/11/2026.", fontsize=8, color="#555555")
+fig.tight_layout(rect=(0, 0.04, 1, 1))
+plt.show()
+''')
+
+cod(r'''
+ROTULOS = ["n", "média", "mediana", "desvio padrão", "Q1", "Q3", "mínimo", "máximo"]
+
+
+def tabela_descritiva(variavel):
+    """Medidas descritivas da variável, para todos e por grupo, na população e na amostra."""
+    linhas = {}
+    for grupo in ["Todos", "N+NE", "Demais"]:
+        for nome, base in [("população", pop), ("amostra", amostra)]:
+            recorte = base if grupo == "Todos" else base[base["grupo"] == grupo]
+            linhas[(grupo, nome)] = c.descritiva(recorte[variavel]).to_numpy()
+    t = pd.DataFrame(linhas, index=ROTULOS).T
+    saida = t.map(lambda v: br(v, 2))
+    saida["n"] = t["n"].map(lambda v: br(v, 0))  # n chega como decimal; aqui é contagem
+    return saida
+
+
+print("SPREAD (% ao ano), só contratos com spread em reais")
+display(tabela_descritiva("spread"))
+print("PRAZO DE AMORTIZAÇÃO (meses)")
+display(tabela_descritiva("prazo_amortizacao"))
+''')
+
+md(r"""
+**Como ler.**
+
+1. Na tabela de proporções, a coluna "diferença" é amostra menos população, em pontos percentuais. A maioria fica em 1 ponto ou menos; o setor tem as maiores (cerca de 3 pontos), pequenas diante da distribuição, e ele não entra em nenhum teste.
+2. Nas medidas, compare cada linha "população" com a linha "amostra" logo abaixo: médias, medianas e quartis andam juntos.
+3. Spread e prazo têm média acima da mediana (spread: 2,71 contra 2,46; prazo: 92 contra 72 meses). Alguns contratos de spread ou prazo muito altos puxam a média, e vale lembrar disso ao comparar grupos.
+4. O grupo N+NE é pequeno (180 contratos na amostra), então suas médias na amostra tendem a se afastar mais das da população do que as do grupo Demais (prazo: 119,6 contra 114,9 meses). Esse é o efeito da variabilidade amostral, que voltaremos a ver na seção 8.
+""")
+
+# =====================================================================================
+# 6. H1 e H2
+# =====================================================================================
+
+md(r"""
+## 6. H1 e H2: a proporção de contratos em N+NE
+
+*Item 4a do enunciado: inferência para um parâmetro de proporção.*
+
+**Variável e evento de interesse.** A variável qualitativa é o grupo do contrato; o evento de interesse é "o contrato é do grupo N+NE". O parâmetro é **π**, a proporção de contratos da população que são N+NE. A amostra dá a estimativa **p̂ = x / n**, com x o número de contratos N+NE na amostra e n = 913.
+
+**As duas hipóteses**, gravadas antes do sorteio, com α = 0,05 fixado antes. As duas testam o mesmo π, contra réguas diferentes:
+
+| Teste | Hipótese nula | Hipótese alternativa | Régua |
+|---|---|---|---|
+| **H1** | $\pi = 0{,}196$ | $\pi \neq 0{,}196$ (bilateral) | **PIB**: N+NE geram 19,6% do PIB (IBGE, Contas Regionais 2023: NE 13,8% + N 5,8%). Pergunta: N+NE recebem pelo menos a sua parte na economia? |
+| **H2** | $\pi = 0{,}354$ | $\pi \neq 0{,}354$ (bilateral) | **População**: N+NE têm 35,4% dos habitantes (IBGE, Censo 2022: NE 26,9% + N 8,5%). Pergunta: recebem a sua parte nas pessoas? |
+
+"Bilateral" quer dizer que olhamos as duas caudas: duvidamos de H0 tanto se a amostra der um π bem **maior** quanto bem **menor** que o da régua.
+
+**Os passos do teste Z de uma proporção:**
+
+1. **Condições.** Para a curva normal servir de aproximação: $n\,p_0 \ge 10$ e $n\,(1-p_0) \ge 10$, ou seja, esperamos pelo menos 10 contratos N+NE e pelo menos 10 dos Demais **se H0 fosse verdadeira**. Mais a amostra ser aleatória simples.
+2. **Estatística:** $z = \dfrac{\hat p - p_0}{\sqrt{p_0(1-p_0)/n}}$. Diz a quantos erros padrão a amostra está do valor de H0. O erro padrão usa $p_0$ porque o teste parte do princípio de que H0 é verdadeira.
+3. **Valor-p bilateral:** $2 \cdot P(Z \ge |z|)$, a área nas duas caudas da normal além do |z| que achamos.
+4. **Decisão:** se o valor-p for menor que α, **rejeita H0**; senão, **não rejeita H0**. Dizemos "não rejeita" e nunca que H0 foi "aceita": não ter encontrado evidência contra H0 não prova que H0 é verdadeira.
+5. **Intervalo de confiança de 95% para π.** Aqui o erro padrão usa $\hat p$, não $p_0$, porque o intervalo não supõe H0: ele só estima. O intervalo de **Wald** é $\hat p \pm 1{,}96\sqrt{\hat p(1-\hat p)/n}$. O de **Wilson** corrige o centro e é mais confiável quando p̂ é pequeno ou n é pequeno; aqui os dois ficam quase iguais.
+
+Repare: o intervalo (passo 5) é o mesmo nos dois testes, porque só depende da amostra. O que muda de H1 para H2 é o $p_0$, e portanto o z e o valor-p.
+""")
+
+cod(r'''
+x = int((amostra["grupo"] == "N+NE").sum())
+n = len(amostra)
+
+res_prop = {}
+linhas_prop = {}
+for h in c.HIPOTESES[:2]:
+    p0 = h["p0_ou_delta0"]
+    cond = c.condicoes_proporcao(n, p0)
+    r = c.teste_z_proporcao(x, n, p0, ALFA)
+    res_prop[h["id"]] = r
+    linhas_prop[h["id"]] = {
+        "Régua": h["referencia"].split(":")[0],
+        "Valor em H0 (p0)": pct(p0, 1),
+        "Contratos N+NE na amostra (x)": br(x, 0),
+        "Tamanho da amostra (n)": br(n, 0),
+        "Proporção amostral p̂ = x / n": pct(r["p_hat"], 2),
+        "Condição: n · p0": br(cond["np0"], 1),
+        "Condição: n · (1 − p0)": br(cond["n_1_menos_p0"], 1),
+        "Condições (ambas ≥ 10)?": "sim" if cond["ok"] else "não",
+        "Erro padrão do teste": pct(r["ep_teste"], 3),
+        "Estatística z": br(r["z"], 3),
+        "Valor-p (bilateral)": fp(r["p_valor"]),
+        "Decisão (α = 0,05)": decisao_texto(r["p_valor"]),
+        "IC 95% de Wald": faixa(r["ic_wald"], lambda v: pct(v, 2)),
+        "IC 95% de Wilson": faixa(r["ic_wilson"], lambda v: pct(v, 2)),
+    }
+display(pd.DataFrame(linhas_prop))
+''')
+
+md(r"""
+**Como ler.**
+
+- **H1 (PIB).** O p̂ ficou em 19,7%, quase igual aos 19,6% de H0: z é perto de zero (0,09) e o valor-p é 0,93. **Não rejeita H0.** A amostra é compatível com a régua do PIB. Isso não prova que π é exatamente 19,6%; só diz que a amostra não traz evidência contra.
+- **H2 (população).** Os mesmos 19,7% agora estão muito longe dos 35,4% de H0: z = −9,91 e valor-p minúsculo (da ordem de 10⁻²³). **Rejeita H0**: a amostra é incompatível com a ideia de que N+NE tenham 35,4% dos contratos.
+- **O intervalo** vai de cerca de 17,1% a 22,3% (Wald). Ele **contém** os 19,6% de H1 e **não contém** os 35,4% de H2, exatamente o que as decisões dos testes disseram. É a dualidade entre intervalo e teste: rejeitar H0 a 5% equivale, aproximadamente, a o valor de H0 ficar fora do intervalo de 95%.
+- As condições passam com folga nos dois testes.
+""")
+
+# =====================================================================================
+# 7. H3, H4 e H5
+# =====================================================================================
+
+md(r"""
+## 7. H3, H4 e H5: médias de spread e de prazo
+
+*Item 4b do enunciado: inferência para parâmetros de média.*
+
+**Variáveis e parâmetro.** As variáveis quantitativas são o **spread** (H3 e H4) e o **prazo de amortização** (H5). Em cada uma comparamos os dois grupos pela diferença das médias da população:
+
+$$ \delta = \mu_{N+NE} - \mu_{Demais} $$
+
+Se $\delta < 0$ no spread, N+NE pagam em média menos que os Demais, que é a promessa da política regional. No prazo, $\delta > 0$ significa que N+NE têm em média mais prazo.
+
+| Teste | Hipótese nula | Hipótese alternativa | Régua |
+|---|---|---|---|
+| **H3** | $\delta = 0$ (spread) | $\delta \neq 0$ (bilateral) | **Condições**: a Política Nacional de Desenvolvimento Regional e a Estratégia Nordeste 2023 preveem condições diferenciadas para N e NE. Pergunta: o spread é diferente? |
+| **H4** | $\delta \ge 0$ (spread) | $\delta < 0$ (unilateral à esquerda) | Mesma régua, mas com a direção da promessa: N+NE pagam **menos**. Olha só a cauda esquerda |
+| **H5** (extra) | $\delta = 0$ (prazo) | $\delta \neq 0$ (bilateral) | A outra metade da pergunta: N+NE também têm mais prazo? |
+
+H3 e H4 testam o **mesmo** δ. A diferença é que o H4 já diz para que lado esperamos o efeito, e por isso concentra todo o α em uma cauda só.
+
+**Por que o teste t de Welch.** Compara as médias de dois grupos independentes **sem supor que têm a mesma variância** (os dois grupos têm dispersões e tamanhos bem diferentes). A estatística é a diferença observada dividida pelo erro padrão da diferença:
+
+$$ t = \frac{\bar x_{N+NE} - \bar x_{Demais}}{\sqrt{s^2_{N+NE}/n_{N+NE} + s^2_{Demais}/n_{Demais}}} $$
+
+Os graus de liberdade (gl) vêm da fórmula de Welch e quase nunca são inteiros. O **d de Cohen** mede o tamanho do efeito: a diferença em unidades de desvio padrão. Como régua de bolso, 0,2 é efeito pequeno, 0,5 médio e 0,8 grande.
+
+**Condições de aplicação:**
+
+1. Amostra aleatória simples.
+2. **n ≥ 30 em cada grupo** (o que conferimos abaixo).
+3. **QQ-plot** de cada grupo. Ele ordena os valores e os compara com o que uma curva normal daria; se os dados forem aproximadamente normais, os pontos ficam sobre a reta. Pontas que se afastam da reta indicam cauda pesada ou assimetria. Com n grande o Teorema Central do Limite faz a média amostral se comportar como normal, e o teste t continua razoável, mas o desvio deve ser dito.
+
+**Intervalo de confiança da média.** O item 4b pede estimar a média populacional por um intervalo. Fazemos isso para a média de cada grupo (IC t com n − 1 graus de liberdade) e, para a diferença, pelo intervalo de Welch.
+""")
+
+cod(r'''
+VARIAVEIS = {"spread": "Spread (% a.a.)", "prazo_amortizacao": "Prazo de amortização (meses)"}
+
+grupos = {
+    var: {g: amostra.loc[amostra["grupo"] == g, var].dropna() for g in ["N+NE", "Demais"]}
+    for var in VARIAVEIS
+}
+
+linhas = []
+for var, rotulo in VARIAVEIS.items():
+    a, b = grupos[var]["N+NE"], grupos[var]["Demais"]
+    cond = c.condicoes_media(len(a), len(b))
+    linhas.append(
+        {
+            "variável": rotulo,
+            "n N+NE": br(cond["n_a"], 0),
+            "n Demais": br(cond["n_b"], 0),
+            "n ≥ 30 nos dois grupos?": "sim" if cond["ok"] else "não",
+        }
+    )
+display(pd.DataFrame(linhas).set_index("variável"))
+
+# Estimativa da média de cada grupo, com IC de 95% (item 4b do enunciado).
+linhas = []
+for var, rotulo in VARIAVEIS.items():
+    for g in ["N+NE", "Demais"]:
+        media, inf, sup = c.ic_media(grupos[var][g])
+        linhas.append(
+            {
+                "variável": rotulo,
+                "grupo": g,
+                "n": br(len(grupos[var][g]), 0),
+                "média da amostra": br(media, 3),
+                "IC 95% da média": faixa((inf, sup), lambda v: br(v, 3)),
+            }
+        )
+display(pd.DataFrame(linhas).set_index(["variável", "grupo"]))
+''')
+
+md(r"""
+### QQ-plots: um por grupo e por variável
+
+Cada gráfico compara os valores da amostra (eixo vertical) com os valores que uma curva normal daria (eixo horizontal). A reta preta é a "normalidade perfeita".
+""")
+
+cod(r'''
+fig, eixos = plt.subplots(2, 2, figsize=(10, 8))
+for i, (var, rotulo) in enumerate(VARIAVEIS.items()):
+    for j, g in enumerate(["N+NE", "Demais"]):
+        valores = grupos[var][g]
+        (teorico, ordenado), (inclinacao, intercepto, _) = stats.probplot(valores, dist="norm")
+        ax = eixos[i, j]
+        ax.scatter(teorico, ordenado, s=12, color=COR[g], alpha=0.7)
+        ax.plot(teorico, inclinacao * teorico + intercepto, color="black", linewidth=1)
+        ax.set_title(f"{rotulo}: {g} (n = {len(valores)})", fontsize=10)
+        ax.set_xlabel("Quantis teóricos da normal")
+        ax.set_ylabel("Quantis da amostra")
+fig.suptitle("QQ-plots dos grupos na amostra", fontsize=12)
+fig.text(0.01, 0.005, "Fonte: amostra de 913 contratos, BNDES (dados abertos). Reta preta: normal perfeita.", fontsize=8, color="#555555")
+fig.tight_layout(rect=(0, 0.02, 1, 0.97))
+plt.show()
+''')
+
+md(r"""
+**O que os QQ-plots mostram.** Nos quatro grupos, os pontos **não** ficam sobre a reta. Dois padrões aparecem:
+
+- **Cauda direita pesada**, sobretudo no spread: alguns contratos têm spread muito acima do típico (perto de 10 pontos percentuais) e os pontos disparam para cima da reta nas pontas. O prazo dos Demais também tem cauda longa.
+- **Degraus e um bloco de zeros à esquerda**: muitos contratos têm exatamente o mesmo prazo, e alguns têm spread ou prazo igual a 0 (limitação 5, seção 9). Valores repetidos fazem os pontos andarem em patamares.
+
+Ou seja, os dados **não são normais**, e isso deve ser dito no vídeo. Mesmo assim o teste de Welch continua razoável: cada grupo tem pelo menos 170 contratos, e o Teorema Central do Limite diz que a **média** de muitos contratos é aproximadamente normal, ainda que os contratos individuais não sejam. O que não se sustentaria é um grupo pequeno. A simulação da seção 8 reforça a conclusão: os testes e os intervalos se comportaram como esperado.
+""")
+
+md(r"""
+### O teste de Welch em H3, H4 e H5
+""")
+
+cod(r'''
+ALT_TEXTO = {"bilateral": "δ ≠ 0", "menor": "δ < 0"}
+
+res_media = {}
+linhas_media = {}
+for h in c.HIPOTESES[2:]:
+    var = h["variavel"]
+    a, b = grupos[var]["N+NE"], grupos[var]["Demais"]
+    r = c.teste_welch(a, b, h["alternativa"], ALFA)
+    res_media[h["id"]] = r
+    casas = 3 if var == "spread" else 2
+    linhas_media[h["id"]] = {
+        "Variável": VARIAVEIS[var],
+        "Hipótese alternativa": ALT_TEXTO[h["alternativa"]] + (" (unilateral)" if h["alternativa"] == "menor" else " (bilateral)"),
+        "n N+NE / n Demais": f"{br(r['n_a'], 0)} / {br(r['n_b'], 0)}",
+        "Média N+NE": br(r["media_a"], casas),
+        "Média Demais": br(r["media_b"], casas),
+        "Diferença observada (N+NE − Demais)": br(r["diferenca"], casas),
+        "Estatística t": br(r["t"], 3),
+        "Graus de liberdade (Welch)": br(r["gl"], 1),
+        "Valor-p": fp(r["p_valor"]),
+        "IC 95% da diferença": faixa(r["ic_diferenca"], lambda v: br(v, casas)),
+        "d de Cohen": br(r["d_cohen"], 3),
+        "Decisão (α = 0,05)": decisao_texto(r["p_valor"]),
+    }
+display(pd.DataFrame(linhas_media))
+''')
+
+md(r"""
+**Como ler.**
+
+- **H3 (spread, bilateral).** Na amostra, N+NE e Demais têm spread médio quase igual (2,703 contra 2,708): diferença de −0,005 ponto percentual, t = −0,04, valor-p = 0,97. **Não rejeita H0.** O intervalo da diferença, de −0,25 a +0,24, passa por zero e é largo: a amostra não consegue distinguir uma diferença pequena de nenhuma diferença. O d de Cohen é praticamente zero.
+- **H4 (spread, unilateral à esquerda).** É o mesmo t (−0,04), mas o valor-p olha só a cauda esquerda: 0,48. **Não rejeita H0.** O valor-p de H4 é metade do de H3 porque o t é negativo, isto é, a amostra caiu do lado que H4 olha; se o t fosse positivo, o valor-p de H4 passaria de 0,5. A promessa "N+NE pagam menos" não aparece na amostra.
+- **H5 (prazo, bilateral).** N+NE têm prazo médio de 119,6 meses contra 84,6 dos Demais: diferença de 35,0 meses, t = 5,71, gl ≈ 216, valor-p da ordem de 10⁻⁸. **Rejeita H0.** O intervalo vai de 22,9 a 47,1 meses, longe de zero. O d de Cohen é 0,62, efeito de tamanho médio.
+- **Condições.** O n passa de 30 em todos os grupos; os QQ-plots mostram caudas pesadas, discutidas acima.
+""")
+
+# =====================================================================================
+# 8. Comparação com a população
+# =====================================================================================
+
+md(r"""
+## 8. Comparação com a população: acertamos?
+
+*Item 4 do enunciado: comparação e interpretação.* O enunciado diz que "os parâmetros populacionais deverão ser calculados diretamente, enquanto os procedimentos de inferência deverão utilizar os dados da amostra". É o que fazemos aqui: calculamos os valores **verdadeiros** na população e perguntamos, para cada teste:
+
+1. **O intervalo de confiança contém o valor verdadeiro?**
+2. **A decisão do teste acertou?** Se errou, foi erro tipo I ou tipo II?
+3. **Qual era o poder do teste?** Ou seja: a chance de ele rejeitar H0 numa amostra como a nossa, se o valor verdadeiro for o da população.
+
+**Como julgamos acerto.** Se o valor verdadeiro é diferente do de H0, rejeitar é acerto e não rejeitar é **erro tipo II**. Se é igual (ou, em H4, se cai do lado de H0), rejeitar seria **erro tipo I** e não rejeitar é acerto.
+
+**O poder** sai por aproximação normal: para as proporções, com o π verdadeiro e o erro padrão sob H0 e sob a verdade; para as médias, com a diferença verdadeira, os desvios padrão da população e os n dos grupos da amostra.
+
+**Dois cuidados para a interpretação:**
+
+- Numa população finita e real, o valor verdadeiro quase nunca é **exatamente** o de H0, então o erro tipo I aqui é hipotético: o que de fato pode acontecer é acertar ou cometer erro tipo II.
+- Um erro tipo II não quer dizer que o teste foi "mal feito". Quando a diferença verdadeira é pequena, o poder é baixo e o teste quase sempre deixa de rejeitar. Veremos isso nos números.
+""")
+
+cod(r'''
+# Valores verdadeiros, calculados direto na população (nenhuma inferência aqui).
+pi_pop = float((pop["grupo"] == "N+NE").mean())
+
+pop_g = {}
+for var in VARIAVEIS:
+    da = c.descritiva(pop.loc[pop["grupo"] == "N+NE", var])
+    db = c.descritiva(pop.loc[pop["grupo"] == "Demais", var])
+    pop_g[var] = {"a": da, "b": db, "delta": float(da["media"] - db["media"])}
+
+print(f"π na população (proporção de contratos em N+NE): {pct(pi_pop, 2)}")
+print(f"δ do spread na população (N+NE − Demais): {br(pop_g['spread']['delta'], 4)} p.p.")
+print(f"δ do prazo na população (N+NE − Demais): {br(pop_g['prazo_amortizacao']['delta'], 2)} meses")
+''')
+
+cod(r'''
+FORMATO = {
+    "grupo": lambda v: pct(v, 2),
+    "spread": lambda v: br(v, 3) + " p.p.",
+    "prazo_amortizacao": lambda v: br(v, 2) + " meses",
+}
+# Diferença entre duas proporções é em pontos percentuais, não em %.
+FORMATO_DIF = {**FORMATO, "grupo": lambda v: br(100 * v, 2) + " p.p."}
+
+numeros = {}   # os valores numéricos de cada teste (usados também na simulação, abaixo)
+colunas = {}
+for h in c.HIPOTESES:
+    hid, var, alt, v0 = h["id"], h["variavel"], h["alternativa"], h["p0_ou_delta0"]
+    f = FORMATO[var]
+    if var == "grupo":
+        r = res_prop[hid]
+        estimativa, ic, estatistica, gl = r["p_hat"], r["ic_wald"], r["z"], "-"
+        verdadeiro = pi_pop
+        poder = c.poder_z_proporcao(pi_pop, v0, n, ALFA)
+        parametro = "π (proporção de contratos em N+NE)"
+        valor_h0 = f"π = {pct(v0, 1)}"
+        extra = faixa(r["ic_wilson"], f) + ", contém: " + ("sim" if r["ic_wilson"][0] <= pi_pop <= r["ic_wilson"][1] else "não")
+    else:
+        r = res_media[hid]
+        estimativa, ic, estatistica, gl = r["diferenca"], r["ic_diferenca"], r["t"], br(r["gl"], 1)
+        verdadeiro = pop_g[var]["delta"]
+        poder = c.poder_welch(
+            verdadeiro, pop_g[var]["a"]["desvio_padrao"], pop_g[var]["b"]["desvio_padrao"],
+            r["n_a"], r["n_b"], ALFA, alt,
+        )
+        parametro = "δ (N+NE − Demais) do " + ("spread" if var == "spread" else "prazo")
+        valor_h0 = "δ = 0" if alt == "bilateral" else "δ ≥ 0"
+        extra = "-"
+    contem = ic[0] <= verdadeiro <= ic[1]
+    h0_verdadeira = (verdadeiro == v0) if alt == "bilateral" else (verdadeiro >= v0)
+    julgamento = c.julgar_decisao(r["rejeita"], verdadeiro, v0, alt)
+    numeros[hid] = {
+        "verdadeiro": verdadeiro, "estimativa": estimativa, "ic": ic, "contem": contem,
+        "rejeita": r["rejeita"], "julgamento": julgamento, "poder": poder,
+    }
+    colunas[hid] = {
+        "Parâmetro": parametro,
+        "Teste": HIP[hid]["teste"] + (" (unilateral à esquerda)" if alt == "menor" else ""),
+        "H0": valor_h0,
+        "Valor verdadeiro (população)": f(verdadeiro),
+        "Estimativa (amostra)": f(estimativa),
+        "Erro amostral (estimativa − verdadeiro)": FORMATO_DIF[var](estimativa - verdadeiro),
+        "IC 95%": faixa(ic, f),
+        "O IC contém o valor verdadeiro?": "sim" if contem else "não",
+        "IC de Wilson (conferência)": extra,
+        "Estatística (z ou t)": br(estatistica, 3),
+        "Graus de liberdade (Welch)": gl,
+        "Valor-p": fp(r["p_valor"]),
+        "Decisão (α = 0,05)": "rejeita H0" if r["rejeita"] else "não rejeita H0",
+        "H0 é verdadeira na população?": "sim" if h0_verdadeira else "não",
+        "Julgamento": julgamento,
+        "Poder do teste": pct(poder, 1),
+    }
+tabela_8 = pd.DataFrame(colunas)
+display(tabela_8)
+''')
+
+md(r"""
+### O que o intervalo diz sobre as médias de cada grupo
+
+O item 4b pede também comparar **a média observada na população com a estimativa da amostra**. A tabela faz isso para cada grupo e cada variável.
+""")
+
+cod(r'''
+linhas = []
+for var, rotulo in VARIAVEIS.items():
+    for g, chave in [("N+NE", "a"), ("Demais", "b")]:
+        media_pop = float(pop_g[var][chave]["media"])
+        media, inf, sup = c.ic_media(grupos[var][g])
+        linhas.append(
+            {
+                "variável": rotulo,
+                "grupo": g,
+                "média na população": br(media_pop, 3),
+                "média na amostra": br(media, 3),
+                "erro amostral": br(media - media_pop, 3),
+                "IC 95% da média": faixa((inf, sup), lambda v: br(v, 3)),
+                "o IC contém a média da população?": "sim" if inf <= media_pop <= sup else "não",
+            }
+        )
+display(pd.DataFrame(linhas).set_index(["variável", "grupo"]))
+''')
+
+md(r"""
+### Variabilidade amostral: e se o sorteio fosse outro?
+
+Os dois "contém: sim" acima são bons, mas é **uma** amostra. Para ver o que a variabilidade amostral faz, a célula abaixo repete o sorteio **1.000 vezes** com sementes de 1 a 1.000 (nenhuma delas é a semente do trabalho) e refaz os cinco testes em cada amostra. Isto é um exercício de estudo: **nenhum número dos testes oficiais vem daqui**.
+
+Duas coisas para olhar: (1) a fração das amostras em que o teste rejeita H0 deve ficar perto do **poder** calculado pela fórmula; (2) a fração dos intervalos que contêm o valor verdadeiro deve ficar perto de 95% (um pouco acima, como explicamos adiante). É isso que "95% de confiança" significa: uma propriedade do **método**, ao longo de muitas amostras, e não uma chance sobre o intervalo de uma amostra só.
+""")
+
+cod(r'''
+REPETICOES = 1000
+rej = {hid: [] for hid in HIP}
+cont = {"pi": [], "spread": [], "prazo_amortizacao": []}
+p_chapeus = []
+
+for semente in range(1, REPETICOES + 1):
+    s = c.sortear_amostra(pop, n=n, semente=semente)
+    xs = int((s["grupo"] == "N+NE").sum())
+    p_chapeus.append(xs / n)
+    for hid in ("H1", "H2"):
+        r = c.teste_z_proporcao(xs, n, HIP[hid]["p0_ou_delta0"], ALFA)
+        rej[hid].append(r["rejeita"])
+    cont["pi"].append(r["ic_wald"][0] <= pi_pop <= r["ic_wald"][1])
+    for hid in ("H3", "H4", "H5"):
+        var = HIP[hid]["variavel"]
+        a = s.loc[s["grupo"] == "N+NE", var]
+        b = s.loc[s["grupo"] == "Demais", var]
+        r = c.teste_welch(a, b, HIP[hid]["alternativa"], ALFA)
+        rej[hid].append(r["rejeita"])
+        if hid != "H4":  # H3 e H4 compartilham o mesmo intervalo
+            cont[var].append(r["ic_diferenca"][0] <= pop_g[var]["delta"] <= r["ic_diferenca"][1])
+
+chave_ic = {"H1": "pi", "H2": "pi", "H3": "spread", "H4": "spread", "H5": "prazo_amortizacao"}
+simulacao = pd.DataFrame(
+    {
+        hid: {
+            "Poder pela fórmula": pct(numeros[hid]["poder"], 1),
+            f"Amostras que rejeitam H0 (de {br(REPETICOES, 0)})": pct(float(np.mean(rej[hid])), 1),
+            "ICs que contêm o valor verdadeiro": pct(float(np.mean(cont[chave_ic[hid]])), 1),
+        }
+        for hid in HIP
+    }
+)
+display(simulacao)
+
+p_chapeus = np.array(p_chapeus)
+print(f"p̂ nas {br(REPETICOES, 0)} amostras: mínimo {pct(p_chapeus.min(), 1)}, máximo {pct(p_chapeus.max(), 1)}, "
+      f"desvio padrão {pct(p_chapeus.std(ddof=1), 2)}; na população, π = {pct(pi_pop, 2)}")
+
+fig, ax = plt.subplots(figsize=(8, 4.2))
+ax.hist(100 * p_chapeus, bins=25, color="#A6A6A6", edgecolor="white")
+ax.axvline(100 * pi_pop, color="black", linewidth=2, label=f"π na população ({pct(pi_pop, 2)})")
+ax.axvline(100 * res_prop["H1"]["p_hat"], color=COR["N+NE"], linewidth=2, linestyle="--", label=f"p̂ da nossa amostra ({pct(res_prop['H1']['p_hat'], 2)})")
+ax.axvline(100 * HIP["H1"]["p0_ou_delta0"], color=COR["Demais"], linewidth=2, linestyle=":", label="valor de H0 no teste H1 (19,6%)")
+ax.set_xlabel("p̂ = % de contratos N+NE na amostra")
+ax.set_ylabel("Número de amostras (de 1.000)")
+ax.set_title("A proporção amostral varia de sorteio para sorteio")
+ax.legend()
+fig.text(0.01, 0.01, "Fonte: 1.000 sorteios da população de 6.320 contratos (BNDES, dados abertos).", fontsize=8, color="#555555")
+fig.tight_layout(rect=(0, 0.04, 1, 1))
+plt.show()
+''')
+
+md(r"""
+### Interpretação, teste por teste
+
+**H1 (régua do PIB).** A amostra deu p̂ = 19,72% e o teste não rejeitou H0 (p = 0,93). Na população, N+NE têm 19,05% dos contratos, 0,55 ponto abaixo da régua de 19,6%, então H0 é falsa por pouco e a decisão é um **erro tipo II inofensivo**: o poder era de só 6,8%, o teste é quase cego para uma distância tão pequena. Na prática, em número de contratos, N+NE recebem quase exatamente a parte que lhes caberia pelo PIB, e o IC [17,13%; 22,30%] contém o π verdadeiro.
+
+**H2 (régua da população).** O teste rejeitou H0 (z = −9,91) e **acertou**: o π verdadeiro (19,05%) está muito longe de 35,4%, e o poder era de praticamente 100%. Pela régua das pessoas, N+NE recebem bem menos que a sua parte em número de contratos. Ressalva da limitação 1: em valor, N+NE ficam com 29%, e a régua populacional é normativa, não uma obrigação do banco.
+
+**H3 (spread, bilateral).** Não rejeitou H0 (p = 0,97), mas H0 é falsa por pouco: na população, N+NE pagam em média 0,069 ponto percentual a menos de spread. É **erro tipo II**: a diferença é minúscula perto do desvio padrão do spread (cerca de 1,4 ponto percentual) e o poder era de apenas 9,2%. O IC da diferença, [−0,249; 0,239], contém o valor verdadeiro (−0,069).
+
+**H4 (spread, unilateral).** Não rejeitou H0 (p = 0,48). A diferença verdadeira tem o sinal que H4 esperava (N+NE pagam menos), então H0 (δ ≥ 0) é falsa e a decisão é **erro tipo II**, por falta de poder: 14,7%, maior que o de H3 porque o teste unilateral junta todo o α na cauda que importa, mas ainda baixo. Na prática, o spread de N+NE é quase igual ao dos Demais.
+
+**H5 (prazo, bilateral).** Rejeitou H0 e **acertou**: a diferença verdadeira de prazo é de 28,4 meses (114,9 contra 86,6) e o poder era de 99,7%. A estimativa (35,0 meses) ficou 6,6 meses acima da verdadeira, e o IC [22,9; 47,1] contém o valor verdadeiro. Cuidado: parte da diferença pode vir de N+NE terem mais contratos de infraestrutura (limitação 4).
+
+### Fomos azarados?
+
+Três dos cinco testes (H1, H3 e H4) deram erro tipo II. Não foi azar: foi **falta de poder diante de diferenças verdadeiras muito pequenas**. Com poderes de 7% a 15%, em 85% a 93% das amostras o resultado seria o mesmo, e a simulação confirma: a fração de amostras que rejeitam H0 ficou perto do poder da fórmula. Os dois testes em que a diferença verdadeira é grande (H2 e H5) rejeitaram, como deveriam.
+
+A lição para o vídeo: **não rejeitar H0 não quer dizer que a diferença é zero**. Quer dizer que a amostra não era grande o bastante para vê-la, e aqui as diferenças que escaparam são pequenas demais para importar na prática.
+
+### E os intervalos?
+
+Os cinco intervalos **contêm** o valor verdadeiro, e os das médias de cada grupo também (tabela acima). Isso não é garantido: ao longo dos 1.000 sorteios, os intervalos cobriram o valor verdadeiro em 96% a 97% das amostras, um pouco acima de 95% porque os erros padrão ignoram a correção de população finita (limitação 8). Em 3% a 4% das amostras o intervalo erraria, e sem a população à mão não saberíamos se o nosso é um desses casos. É isso que "95% de confiança" quer dizer: uma propriedade do método, e não uma chance associada ao intervalo que calculamos.
+""")
+
+# =====================================================================================
+# 9. Limitações
+# =====================================================================================
+
+md(r"""
+## 9. Limitações da análise
+
+*Item 4 do enunciado: as limitações e o efeito da variabilidade amostral.*
+
+**O efeito da variabilidade amostral** já apareceu: cada amostra dá números um pouco diferentes (o p̂ oscilou de sorteio para sorteio), e é por isso que damos **intervalos**, não só um número. O poder baixo de H1, H3 e H4 também é variabilidade amostral: quando a diferença verdadeira é pequena perto do ruído da amostra, o teste quase nunca a distingue de zero.
+
+**Limitações do trabalho:**
+
+1. **O teste conta contratos; o BNDES e o IBGE falam em valor.** Um contrato de R$ 1 mil pesa como um de R$ 10 bilhões. Por valor, N+NE ficam com uma fatia bem maior do que por número de contratos (célula abaixo).
+2. **A base não tem as operações automáticas** (via bancos repassadores), que é onde estão as micro, pequenas e médias empresas. Os números oficiais de participação regional incluem essas operações.
+3. **2002 a 2025 junta períodos muito diferentes**: governos, políticas de juros (TJLP, TLP) e níveis de Selic distintos. A média de 24 anos esconde essa mudança.
+4. **N+NE têm mais contratos de infraestrutura** (60% contra 33%), e infraestrutura tem prazos mais longos por natureza. A diferença de prazo de H5 pode vir do **setor**, não da região.
+5. **Spreads 0 e amortizações 0** que parecem erro de registro foram mantidos (célula abaixo). Se forem erro, puxam as médias para baixo.
+6. **As réguas são normativas.** O PIB e a população são parâmetros de justiça que escolhemos; o BNDES não tem obrigação legal de seguir a régua populacional.
+7. **Descrevemos e testamos; não explicamos.** Mostrar que N+NE têm contratos mais longos não diz **por que**. O trabalho não afirma causa.
+8. **Fração amostrada de 14%.** Os erros padrão que usamos ignoram a correção para população finita; com 14% da população sorteada, os intervalos saem um pouco mais largos do que o necessário (ficam do lado conservador).
+""")
+
+cod(r'''
+valor_total = pop["valor_contratado"].sum()
+valor_nne = pop.loc[pop["grupo"] == "N+NE", "valor_contratado"].sum()
+infra = pop.groupby("grupo")["setor"].apply(lambda s: (s == "INFRAESTRUTURA").mean())
+sem_spread = int(pop["spread"].isna().sum())
+
+evidencias = pd.Series(
+    {
+        "N+NE: proporção dos contratos": pct(pi_pop, 2),
+        "N+NE: proporção do valor contratado": pct(valor_nne / valor_total, 2),
+        "Contratos de infraestrutura em N+NE": pct(infra["N+NE"], 1),
+        "Contratos de infraestrutura nos Demais": pct(infra["Demais"], 1),
+        "Contratos com spread igual a 0": br(int((pop["spread"] == 0).sum()), 0),
+        "Contratos com prazo de amortização igual a 0": br(int((pop["prazo_amortizacao"] == 0).sum()), 0),
+        "Contratos sem spread em reais (fora de H3 e H4)": f"{br(sem_spread, 0)} ({pct(sem_spread / N, 1)})",
+        "Fração da população sorteada (n / N)": pct(meta["n"] / N, 1),
+    },
+    name="valor",
+)
+display(evidencias.to_frame())
+''')
+
+md(r"""
+**Como ler.** A primeira e a segunda linha mostram a limitação 1: N+NE têm cerca de 19% dos contratos e cerca de 29% do valor. As duas linhas de infraestrutura sustentam a limitação 4. As de zeros e de contratos sem spread mostram o tamanho da limitação 5 e do corte do spread.
+""")
+
+
+# =====================================================================================
+# Montagem
+# =====================================================================================
+
+def montar() -> None:
+    """Numera as células, valida e grava o caderno (sem saídas)."""
+    caderno = new_notebook()
+    caderno.metadata["kernelspec"] = {"display_name": "Python 3", "language": "python", "name": "python3"}
+    caderno.metadata["language_info"] = {"name": "python"}
+    for i, celula in enumerate(CELULAS):
+        celula["id"] = f"c{i:03d}"
+    caderno.cells = CELULAS
+    nbformat.validate(caderno)
+    nbformat.write(caderno, SAIDA)
+    print(f"Caderno gravado em {SAIDA} com {len(CELULAS)} células.")
+
+
+if __name__ == "__main__":
+    montar()

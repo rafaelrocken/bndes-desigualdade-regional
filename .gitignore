@@ -2,3 +2,4 @@ __pycache__/
 .pytest_cache/
 *.csv
 .ipynb_checkpoints/
+caderno_exec.ipynb
