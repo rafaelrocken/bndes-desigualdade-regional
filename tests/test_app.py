@@ -262,11 +262,24 @@ def test_nenhuma_pagina_tem_excecao_nos_dois_modos(pagina, nivel):
 
 
 @pytest.mark.parametrize("pagina", ["paginas/populacao.py", "paginas/amostra.py"])
-def test_paineis_descritivos_tem_as_tres_abas_e_os_numeros_recolhidos(pagina):
+def test_paineis_descritivos_tem_as_tres_abas_e_so_as_medidas_abertas(pagina):
+    """O enunciado pede média, mediana, desvio padrão, frequências e proporções: essas tabelas
+    (por grupo, e as medidas de spread e de prazo) vêm abertas, sem clique; as demais, recolhidas."""
     at = _rodar(pagina)
     assert [t.label for t in at.tabs] == ["Onde estão os contratos", "Condições: spread e prazo", "Qualidade dos dados"]
-    assert at.expander and all(not e.proto.expanded for e in at.expander)
-    assert all(e.label.startswith("Ver os números") for e in at.expander)
+    assert at.expander and all(e.label.startswith("Ver os números") for e in at.expander)
+
+    def primeira_coluna(expansor) -> str:
+        return expansor.dataframe[0].value.columns[0]
+
+    abertos = [e for e in at.expander if e.proto.expanded]
+    fechados = [e for e in at.expander if not e.proto.expanded]
+    # abertos: as frequências e proporções por grupo, e a descritiva de spread e a de prazo
+    assert sorted(primeira_coluna(e) for e in abertos) == ["Grupo", "Medida", "Medida"]
+    assert all(e.label == "Ver os números" for e in abertos)
+    # o resto continua recolhido, inclusive a descritiva do valor contratado
+    assert r"Ver os números (valor contratado em R\$ milhões)" in [e.label for e in fechados]
+    assert "Grupo" not in [primeira_coluna(e) for e in fechados]
 
 
 def test_painel_3_tem_uma_aba_por_hipotese():

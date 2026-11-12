@@ -134,9 +134,10 @@ def grafico(chart) -> None:
     st.altair_chart(chart, width="stretch")
 
 
-def numeros(*tabelas: pd.DataFrame, rotulo: str = "Ver os números") -> None:
-    """As tabelas de números, recolhidas num expansor abaixo do gráfico."""
-    with st.expander(rotulo):
+def numeros(*tabelas: pd.DataFrame, rotulo: str = "Ver os números", aberto: bool = False) -> None:
+    """As tabelas de números, num expansor abaixo do gráfico: recolhido, salvo com `aberto=True`
+    (as medidas descritivas e as frequências que o enunciado pede ficam visíveis sem clique)."""
+    with st.expander(rotulo, expanded=aberto):
         for df in tabelas:
             tabela(df)
 
@@ -541,6 +542,7 @@ def painel_descritivo(pop: pd.DataFrame, amostra: pd.DataFrame, qual: str, ibge:
                     ("participacao", "% dos contratos", lambda v: pct(v, 2)),
                     ("participacao_valor", "% do valor", lambda v: pct(v, 2)),
                 ]),
+                aberto=True,
             )
 
         with bloco("Três réguas: contratos, PIB e população"):
@@ -636,7 +638,7 @@ def painel_descritivo(pop: pd.DataFrame, amostra: pd.DataFrame, qual: str, ibge:
                 with direita:
                     grafico(g.boxplot(df, coluna, dom, f"{titulo}: boxplot",
                                       legenda=(f"{base}. Pontos: contratos fora dos bigodes.",)))
-                numeros(tabela_descritiva(pop, comparar, coluna))
+                numeros(tabela_descritiva(pop, comparar, coluna), aberto=True)
 
         with bloco("Setor dos contratos em cada grupo"):
             infra = df.groupby("grupo")["setor"].apply(lambda s: (s == "Infraestrutura").mean())
