@@ -610,7 +610,7 @@ md(r"""
 - **Cauda direita pesada**, sobretudo no spread: alguns contratos têm spread muito acima do típico (perto de 10 pontos percentuais) e os pontos disparam para cima da reta nas pontas. O prazo dos Demais também tem cauda longa.
 - **Degraus e um bloco de zeros à esquerda**: muitos contratos têm exatamente o mesmo prazo, e alguns têm spread ou prazo igual a 0 (limitação 5, seção 9). Valores repetidos fazem os pontos andarem em patamares.
 
-Ou seja, os dados **não são normais**, e isso deve ser dito no vídeo. Mesmo assim o teste de Welch continua razoável: cada grupo tem pelo menos 170 contratos, e o Teorema Central do Limite diz que a **média** de muitos contratos é aproximadamente normal, ainda que os contratos individuais não sejam. O que não se sustentaria é um grupo pequeno. A simulação da seção 8 reforça a conclusão: os testes e os intervalos se comportaram como esperado.
+Ou seja, os dados **não são normais**, e isso precisa ser dito. Mesmo assim o teste de Welch continua razoável: cada grupo tem pelo menos 170 contratos, e o Teorema Central do Limite diz que a **média** de muitos contratos é aproximadamente normal, ainda que os contratos individuais não sejam. O que não se sustentaria é um grupo pequeno. A simulação da seção 8 reforça a conclusão: os testes e os intervalos se comportaram como esperado.
 """)
 
 md(r"""
