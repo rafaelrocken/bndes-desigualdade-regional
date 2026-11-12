@@ -21,6 +21,7 @@ from graficos import (
     dominio,
     histograma,
     intervalos,
+    max_proporcao_histograma,
     qqplot,
 )
 
@@ -191,6 +192,70 @@ def test_histograma_eixos_em_portugues_com_unidade(pop_pequena):
 def test_histograma_rotulo_proprio(pop_pequena):
     d = histograma(pop_pequena, "spread", (0, 6), "t", rotulo="Meu eixo").to_dict()
     assert d["spec"]["encoding"]["x"]["title"] == "Meu eixo"
+
+
+def _pop_e_amostra_sinteticas() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """População com spread espalhado em [0, 6] e uma amostra com metade dos
+    contratos amontoados em 2,05: a faixa mais alta da amostra passa de 50%."""
+    rng = np.random.default_rng(7)
+    grupo = ["N+NE", "Demais"] * 300
+    pop = pd.DataFrame({"grupo": grupo, "spread": rng.uniform(0, 6, 600)})
+    sorteados = rng.uniform(0, 6, 200)
+    sorteados[:100] = 2.05
+    amostra = pd.DataFrame({"grupo": ["N+NE", "Demais"] * 100, "spread": sorteados})
+    return pop, amostra
+
+
+def _maior_proporcao(spec: dict) -> float:
+    return max(r["proporcao"] for r in _tabelas(spec)[0])
+
+
+def _dominios_de_y(spec: dict) -> list:
+    return [c["scale"].get("domain") for c in _encodings(spec) if c.get("field") == "proporcao" and "scale" in c]
+
+
+def test_max_proporcao_cobre_a_populacao_e_a_amostra():
+    pop, amostra = _pop_e_amostra_sinteticas()
+    v = max_proporcao_histograma([pop, amostra], "spread", (0, 6))
+    maior_pop = _maior_proporcao(histograma(pop, "spread", (0, 6), "t").to_dict())
+    maior_amostra = _maior_proporcao(histograma(amostra, "spread", (0, 6), "t").to_dict())
+    assert maior_amostra > maior_pop  # a amostra tem a faixa mais alta
+    assert v >= maior_pop and v >= maior_amostra
+    assert v == pytest.approx(min(1.0, 1.05 * maior_amostra))  # 5% de folga sobre o maior
+    assert 0 < v <= 1
+
+
+def test_histograma_com_max_y_fixa_o_eixo_vertical_nos_dois_paineis():
+    pop, amostra = _pop_e_amostra_sinteticas()
+    v = max_proporcao_histograma([pop, amostra], "spread", (0, 6))
+    d_pop = histograma(pop, "spread", (0, 6), "t", max_y=v).to_dict()
+    d_amostra = histograma(amostra, "spread", (0, 6), "t", max_y=v).to_dict()
+    assert [0, v] in _dominios_de_y(d_pop)
+    assert [0, v] in _dominios_de_y(d_amostra)
+    # as barras da amostra cabem no eixo, nada é cortado
+    assert _maior_proporcao(d_amostra) <= v
+
+
+def test_histograma_sem_max_y_deixa_o_eixo_vertical_automatico(pop_pequena):
+    d = histograma(pop_pequena, "spread", (0, 6), "t").to_dict()
+    assert _dominios_de_y(d) == [None]
+
+
+def test_max_proporcao_limita_em_um_e_exige_valores():
+    todos_na_mesma_faixa = pd.DataFrame({"grupo": ["N+NE", "Demais"], "spread": [1.0, 1.0]})
+    assert max_proporcao_histograma([todos_na_mesma_faixa], "spread", (0, 6)) == 1.0
+    vazio = pd.DataFrame({"grupo": ["N+NE"], "spread": [np.nan]})
+    with pytest.raises(ValueError, match="nenhum valor"):
+        max_proporcao_histograma([vazio], "spread", (0, 6))
+    with pytest.raises(ValueError, match="nenhum valor"):
+        max_proporcao_histograma([], "spread", (0, 6))
+
+
+def test_max_proporcao_usa_as_mesmas_faixas_do_histograma(pop_pequena):
+    for bins in (10, 30):
+        v = max_proporcao_histograma([pop_pequena], "spread", (0, 6), bins=bins)
+        d = histograma(pop_pequena, "spread", (0, 6), "t", bins=bins).to_dict()
+        assert v == pytest.approx(min(1.0, 1.05 * _maior_proporcao(d)))
 
 
 # ---------------------------------------------------------------- boxplot
@@ -387,9 +452,12 @@ def test_graficos_com_a_populacao_e_a_amostra_reais():
     amostra = pd.read_parquet(caminho_amostra)
     for coluna in ("spread", "prazo_amortizacao"):
         faixa = dominio(pop, coluna)
+        teto = max_proporcao_histograma([pop, amostra], coluna, faixa)
         for base in (pop, amostra):
-            d = histograma(base, coluna, faixa, "t").to_dict()
+            d = histograma(base, coluna, faixa, "t", max_y=teto).to_dict()
             assert d["spec"]["encoding"]["x"]["scale"]["domain"] == list(faixa)
+            assert d["spec"]["encoding"]["y"]["scale"]["domain"] == [0, teto]
+            assert _maior_proporcao(d) <= teto
             boxplot(base, coluna, faixa, "t").to_dict()
     for base in (pop, amostra):
         barras_regiao(base, "contratos", "t").to_dict()

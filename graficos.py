@@ -9,7 +9,8 @@ Regras da disciplina que valem para todos os gráficos:
   histograma ou boxplot para variável quantitativa; nada de pizza nem 3D;
 - título, fonte e legenda em todos (a fonte vai no subtítulo do título);
 - os painéis da população e da amostra usam a mesma escala: o domínio dos eixos
-  é calculado na população (`dominio`) e passado aos construtores;
+  é calculado na população (`dominio`) e passado aos construtores, e o eixo
+  vertical dos histogramas é fixado com `max_proporcao_histograma` nos dois;
 - as cores dos grupos (`CORES`) nunca trocam de lugar: toda escala de cor por
   grupo é montada pela mesma função, com o domínio na ordem N+NE, Demais.
 
@@ -190,25 +191,16 @@ def barras_setor(df: pd.DataFrame, titulo: str) -> alt.Chart:
     )
 
 
-def histograma(
-    df: pd.DataFrame,
-    coluna: str,
-    dominio: tuple[float, float],
-    titulo: str,
-    bins: int = 30,
-    *,
-    rotulo: str | None = None,
-) -> alt.FacetChart:
-    """Histograma de `coluna` com um quadro por grupo, um acima do outro.
+def _proporcoes_por_faixa(
+    df: pd.DataFrame, coluna: str, dominio: tuple[float, float], bins: int
+) -> pd.DataFrame:
+    """Uma linha por grupo e faixa, com a contagem e a proporção do grupo.
 
-    Os ausentes saem. As faixas dividem o `dominio` em `bins` partes iguais, as
-    mesmas para os dois grupos e para os dois painéis. A altura é a proporção dos
-    contratos do grupo em cada faixa (não a contagem), que deixa população e
-    amostra comparáveis apesar dos tamanhos diferentes; o denominador é o total de
-    valores não ausentes do grupo, de modo que valores fora do `dominio` ficam sem
-    barra mas contam no denominador. O eixo x usa `dominio` com `clamp`.
-
-    `rotulo` troca o título do eixo x (por padrão vem de `ROTULOS`).
+    As faixas dividem o `dominio` em `bins` partes iguais. Os ausentes saem; o
+    denominador da proporção é o total de valores não ausentes do grupo, de modo
+    que valores fora do `dominio` ficam sem faixa mas contam no denominador. É
+    daqui que saem tanto as barras do `histograma` quanto o `max_proporcao_histograma`,
+    então os dois concordam por construção.
     """
     bordas = np.linspace(dominio[0], dominio[1], bins + 1)
     quadros = []
@@ -226,7 +218,51 @@ def histograma(
                 }
             )
         )
-    dados = pd.concat(quadros, ignore_index=True)
+    return pd.concat(quadros, ignore_index=True)
+
+
+def max_proporcao_histograma(
+    dfs: list[pd.DataFrame], coluna: str, dominio: tuple[float, float], bins: int = 30
+) -> float:
+    """Maior proporção de uma faixa dentro de um grupo, entre todos os `dfs`, com
+    5% de folga (no máximo 1). Serve de `max_y` para os histogramas da população e
+    da amostra, que assim ficam com o mesmo eixo vertical.
+
+    Usa as mesmas faixas do `histograma` (mesmos `dominio` e `bins`).
+    """
+    maiores = [_proporcoes_por_faixa(df, coluna, dominio, bins)["proporcao"].max() for df in dfs]
+    maior = max(maiores, default=0.0)
+    if not maior > 0:
+        raise ValueError(f"nenhum valor de {coluna!r} dentro do domínio para medir a proporção")
+    return float(min(1.0, 1.05 * maior))
+
+
+def histograma(
+    df: pd.DataFrame,
+    coluna: str,
+    dominio: tuple[float, float],
+    titulo: str,
+    bins: int = 30,
+    *,
+    rotulo: str | None = None,
+    max_y: float | None = None,
+) -> alt.FacetChart:
+    """Histograma de `coluna` com um quadro por grupo, um acima do outro.
+
+    Os ausentes saem. As faixas dividem o `dominio` em `bins` partes iguais, as
+    mesmas para os dois grupos e para os dois painéis. A altura é a proporção dos
+    contratos do grupo em cada faixa (não a contagem), que deixa população e
+    amostra comparáveis apesar dos tamanhos diferentes; o denominador é o total de
+    valores não ausentes do grupo, de modo que valores fora do `dominio` ficam sem
+    barra mas contam no denominador. O eixo x usa `dominio` com `clamp`.
+
+    `rotulo` troca o título do eixo x (por padrão vem de `ROTULOS`). `max_y` fixa o
+    eixo y em [0, max_y]; para comparar população e amostra, passe nos dois
+    gráficos o valor de `max_proporcao_histograma([pop, amostra], ...)`. Sem
+    `max_y`, o eixo y se ajusta ao próprio gráfico.
+    """
+    dados = _proporcoes_por_faixa(df, coluna, dominio, bins)
+    escala_y = alt.Scale(zero=True) if max_y is None else alt.Scale(domain=[0, max_y], clamp=True)
 
     eixo_x = _rotulo(coluna, rotulo)
     return (
@@ -242,7 +278,7 @@ def histograma(
             x2="fim:Q",
             y=alt.Y(
                 "proporcao:Q",
-                scale=alt.Scale(zero=True),
+                scale=escala_y,
                 axis=alt.Axis(format=".0%"),
                 # duas linhas: o título se repete em cada quadro e numa linha só não cabe
                 title=["Proporção dos contratos", "do grupo em cada faixa (%)"],
