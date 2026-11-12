@@ -47,6 +47,8 @@ Nos Painéis 1 e 2, o seletor "Ver por" alterna entre região e estado.
 
 As hipóteses H1 a H5, α = 0,05 e a semente do sorteio (20261112) foram gravadas no commit `c47f903` de 12/11/2026 às 13h25, antes do sorteio, no repositório local do curso, que não é público. Não há link para ele. O hash completo, `c47f9033554cf2e07c9cac692754291c413c1d55`, está em `dados/metadados.json`.
 
+A prova pública está no histórico deste repositório: as hipóteses (a lista `HIPOTESES` de `calculo.py`) entraram no commit [`fd7f39a`](https://github.com/rafaelrocken/bndes-desigualdade-regional/commit/fd7f39aa3fd677457f19eb9397165e2e3ef30a8b) em 12/11/2026, às 13h44, e o sorteio da amostra, no commit [`165e7c0`](https://github.com/rafaelrocken/bndes-desigualdade-regional/commit/165e7c0cf7323aacfe7cb570d2acd68af82e6ca2), às 13h49 do mesmo dia: as hipóteses vieram primeiro. Dá para conferir com `git log --format="%h %ad %s" --date=iso`.
+
 ## Fontes dos dados
 
 - **BNDES**, operações de financiamento, operações não automáticas, no [Portal de Dados Abertos do BNDES](https://dadosabertos.bndes.gov.br/dataset/operacoes-financiamento). O arquivo usado é o [CSV das operações não automáticas](https://dadosabertos.bndes.gov.br/dataset/10e21ad1-568e-45e5-a8af-43f2c05ef1a2/resource/6f56b78c-510f-44b6-8274-78a5b7e931f4/download/operacoes-financiamento-operacoes-nao-automaticas.csv), atualizado no portal em 11/11/2026 e baixado em 12/11/2026 (24.035 linhas e 34 colunas).

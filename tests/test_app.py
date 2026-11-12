@@ -92,6 +92,17 @@ def test_base_mostra_tamanhos():
     assert "20261112" in texto and "c47f903" in texto
 
 
+def test_base_cita_a_prova_publica_do_pre_registro():
+    """Além do commit do repositório local do curso, a página aponta os dois commits deste repositório
+    público: as hipóteses (13h44) entram antes do sorteio (13h49)."""
+    texto = " ".join(m.value for m in _rodar("paginas/base.py").markdown)
+    assert "fd7f39a" in texto and "165e7c0" in texto
+    assert texto.index("fd7f39a") < texto.index("165e7c0")
+    assert "13h44" in texto and "13h49" in texto
+    assert "/commit/fd7f39aa3fd677457f19eb9397165e2e3ef30a8b" in texto
+    assert "/commit/165e7c0cf7323aacfe7cb570d2acd68af82e6ca2" in texto
+
+
 def test_painel_1_mostra_qualidade_dos_dados():
     at = _rodar("paginas/populacao.py")
     # os rótulos da tabela de qualidade estão na primeira coluna ("Item")

@@ -33,6 +33,12 @@ N = len(pop)
 calc = c.tamanho_amostra(N, E=meta["E"], confianca=meta["confianca"], pi=meta["pi"])
 n0, n, z = calc["n0"], calc["n"], calc["z"]
 
+# Prova pública do pré-registro, no histórico deste repositório (12/11/2026): as hipóteses (`HIPOTESES`,
+# em calculo.py) entraram às 13h44 e o sorteio, que gerou a amostra, às 13h49.
+REPOSITORIO = "https://github.com/rafaelrocken/bndes-desigualdade-regional"
+COMMIT_HIPOTESES = "fd7f39aa3fd677457f19eb9397165e2e3ef30a8b"
+COMMIT_SORTEIO = "165e7c0cf7323aacfe7cb570d2acd68af82e6ca2"
+
 
 def em_latex(numero: str) -> str:
     """Vírgula decimal dentro de LaTeX: `{,}` evita o espaço que o LaTeX põe depois da vírgula."""
@@ -205,7 +211,7 @@ st.markdown(
     f"""
 - **Amostragem aleatória simples sem reposição:** todo contrato tem a mesma chance de ser sorteado e nenhum entra duas vezes. A população é ordenada pelo número do contrato e sorteada com `sample(n={n}, replace=False, random_state={meta["semente"]})` do pandas.
 - **Semente: {meta["semente"]}** (a data do sorteio). Com a mesma semente, qualquer pessoa repete o mesmo sorteio.
-- **Pré-registro:** as cinco hipóteses, o nível de significância e a semente foram gravados no commit `{meta["commit_pre_registro"][:7]}` em 12/11/2026, às 13h25, no repositório local do curso, **antes** do sorteio. Assim o resultado do sorteio não pôde influenciar as hipóteses.
+- **Pré-registro:** as cinco hipóteses, o nível de significância e a semente foram gravados no commit `{meta["commit_pre_registro"][:7]}` em 12/11/2026, às 13h25, no repositório local do curso, **antes** do sorteio. Esse repositório não é público; a prova pública está neste: as hipóteses entraram no commit [`{COMMIT_HIPOTESES[:7]}`]({REPOSITORIO}/commit/{COMMIT_HIPOTESES}) (12/11/2026, 13h44) e o sorteio, no commit [`{COMMIT_SORTEIO[:7]}`]({REPOSITORIO}/commit/{COMMIT_SORTEIO}) (13h49). Assim o resultado do sorteio não pôde influenciar as hipóteses.
 - **Resultado:** {inteiro(len(amostra))} contratos, {inteiro(contagem["N+NE"])} no Norte e Nordeste e {inteiro(contagem["Demais"])} nas demais regiões.
 """
 )
