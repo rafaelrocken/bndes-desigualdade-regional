@@ -348,8 +348,9 @@ INTERPRETACAO = {
     "H4": (
         f"**H4 (spread, unilateral).** {'Rejeitou' if r4['teste']['rejeita'] else 'Não rejeitou'} H0 "
         f"(p = {fp(r4['teste']['p_valor'])}). A diferença verdadeira tem o sinal que H4 esperava (o Norte e Nordeste "
-        f"pagam menos), então H0 (δ ≥ 0) é falsa e a decisão é {frase_julgamento(r4)}, inofensivo pelo mesmo motivo de "
-        f"H3, com poder de {poder_texto(r4['poder'])}: maior que o de H3 porque o teste unilateral junta todo o α na "
+        f"pagam menos), então H0 (δ ≥ 0) é falsa e a decisão é {frase_julgamento(r4)}"
+        f"{', inofensivo pelo mesmo motivo de H3' if inofensivo['H4'] else ''}, "
+        f"com poder de {poder_texto(r4['poder'])}: maior que o de H3 porque o teste unilateral junta todo o α na "
         "cauda que importa, mas ainda baixo. O IC bilateral "
         f"{faixa(r4['ic'], lambda v: br(v, 3))} {'contém' if r4['contem'] else 'não contém'} o δ verdadeiro; o "
         f"intervalo unilateral que combina com o teste, (−∞; {br(u4, 3)}], "
