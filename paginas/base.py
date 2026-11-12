@@ -12,7 +12,17 @@ import streamlit as st  # noqa: E402
 
 import calculo as c  # noqa: E402
 from dados_app import carregar  # noqa: E402
-from tela import br, inteiro, pct, tabela, tabela_estatica  # noqa: E402
+from tela import (  # noqa: E402
+    PAGINAS_PAINEIS,
+    br,
+    cartoes,
+    inteiro,
+    link_pagina,
+    pct,
+    pergunta,
+    tabela,
+    tabela_estatica,
+)
 
 pop, amostra, meta = carregar()
 N = len(pop)
@@ -25,12 +35,27 @@ def em_latex(numero: str) -> str:
     return numero.replace(",", "{,}")
 
 
-st.title("O BNDES compensa a desigualdade regional?")
+st.title("Base de dados e amostra")
+pergunta("O BNDES compensa a desigualdade regional?")
+st.markdown(
+    "Este app responde em **quatro partes**: esta página apresenta a base de dados e o sorteio da amostra; "
+    "o **Painel 1** descreve a população inteira; o **Painel 2** descreve a amostra, ao lado da população; e "
+    "o **Painel 3** testa as cinco hipóteses só com a amostra e confere o resultado na população. Os links "
+    "para os painéis estão no menu do topo e no fim desta página."
+)
+cartoes([
+    {"rotulo": "Contratos na população (N)", "valor": inteiro(N),
+     "ajuda": "Contratos reembolsáveis, com UF definida, de 2002 a 2025."},
+    {"rotulo": "Contratos na amostra (n)", "valor": inteiro(n), "ajuda": "Amostra aleatória simples, sem reposição."},
+    {"rotulo": "Linhas da base original", "valor": inteiro(meta["linhas_base"]),
+     "ajuda": "Uma linha por subcrédito, antes de agregar em contratos."},
+    {"rotulo": "Variáveis da base original", "valor": inteiro(meta["colunas_base"]), "ajuda": "Colunas do arquivo do BNDES."},
+])
 st.markdown(
     "O BNDES declara, na sua missão e nas Diretrizes Estratégicas 2026–2030, que trabalha pela "
     "\"redução das desigualdades sociais e regionais\". Este trabalho testa essa promessa com a base "
-    "pública de operações não automáticas do banco, comparando o Norte e o Nordeste (**N+NE**) com as "
-    "demais regiões (**Demais**: Centro-Oeste, Sudeste e Sul). Como a população inteira está disponível, "
+    "pública de operações não automáticas do banco, comparando o **Norte e Nordeste** (nas tabelas, N+NE) com as "
+    "**demais regiões** (Centro-Oeste, Sudeste e Sul). Como a população inteira está disponível, "
     "os parâmetros verdadeiros são calculados nela, e a inferência usa só a amostra: no Painel 3 "
     "conferimos se os intervalos e os testes acertaram."
 )
@@ -40,9 +65,9 @@ st.markdown(
     """
 | Régua | Pergunta | Referência e fonte | Teste |
 |---|---|---|---|
-| **PIB** | N+NE recebem a sua parte na economia? | 19,6% (IBGE, Contas Regionais 2023: NE 13,8% + N 5,8%). O próprio BNDES usa esta régua: no Relatório Anual 2015 diz ter dado a N e NE mais que a sua parte no PIB | H1 |
-| **População** | N+NE recebem a sua parte nas pessoas? | 35,4% (IBGE, Censo 2022: NE 26,9% + N 8,5%). Régua normativa: a Constituição (art. 165, §7º) manda reduzir desigualdades inter-regionais "segundo critério populacional", e o ADCT (art. 35) fala em distribuição "proporcional à população". Vale para o orçamento federal, não para o crédito do BNDES; entra como parâmetro de justiça, não como obrigação do banco | H2 |
-| **Condições** | N+NE pagam menos e têm mais prazo? | Política Nacional de Desenvolvimento Regional (participação maior e garantias diferenciadas para N/NE) e Estratégia Nordeste 2023 (orçamento dedicado e condições diferenciadas) | H3, H4 e H5 |
+| **PIB** | Norte e Nordeste recebem a sua parte na economia? | 19,6% (IBGE, Contas Regionais 2023: NE 13,8% + N 5,8%). O próprio BNDES usa esta régua: no Relatório Anual 2015 diz ter dado a N e NE mais que a sua parte no PIB | H1 |
+| **População** | Norte e Nordeste recebem a sua parte nas pessoas? | 35,4% (IBGE, Censo 2022: NE 26,9% + N 8,5%). Régua normativa: a Constituição (art. 165, §7º) manda reduzir desigualdades inter-regionais "segundo critério populacional", e o ADCT (art. 35) fala em distribuição "proporcional à população". Vale para o orçamento federal, não para o crédito do BNDES; entra como parâmetro de justiça, não como obrigação do banco | H2 |
+| **Condições** | Norte e Nordeste pagam menos e têm mais prazo? | Política Nacional de Desenvolvimento Regional (participação maior e garantias diferenciadas para N/NE) e Estratégia Nordeste 2023 (orçamento dedicado e condições diferenciadas) | H3, H4 e H5 |
 """
 )
 st.caption(
@@ -80,7 +105,7 @@ st.markdown(
     f"""
 - **Unidade amostral: o contrato.** A pergunta é sobre decisões de financiamento, e um contrato com 99 subcréditos não pode pesar 99 vezes. Por isso os subcréditos são agregados em contratos: uma linha por contrato ({inteiro(mais_de_um)} contratos, {pct(mais_de_um / N)}, têm mais de um subcrédito).
 - **População:** contratos de modalidade reembolsável, com UF definida (saem as operações interestaduais, "IE") e contratados de 2002 a 2025. **N = {inteiro(N)} contratos.**
-- **Grupos:** cada contrato fica na região da UF com a maior parte do valor; **N+NE** junta Norte e Nordeste, **Demais** junta Centro-Oeste, Sudeste e Sul.
+- **Grupos:** cada contrato fica na região da UF com a maior parte do valor; **Norte e Nordeste** (N+NE nas tabelas) de um lado; **demais regiões** (Centro-Oeste, Sudeste e Sul; Demais nas tabelas) do outro.
 """
 )
 
@@ -149,6 +174,10 @@ st.markdown(
 - **Amostragem aleatória simples sem reposição:** todo contrato tem a mesma chance de ser sorteado e nenhum entra duas vezes. A população é ordenada pelo número do contrato e sorteada com `sample(n={n}, replace=False, random_state={meta["semente"]})` do pandas.
 - **Semente: {meta["semente"]}** (a data do sorteio). Com a mesma semente, qualquer pessoa repete o mesmo sorteio.
 - **Pré-registro:** as cinco hipóteses, o nível de significância e a semente foram gravados no commit `{meta["commit_pre_registro"][:7]}` em 12/11/2026, às 13h25, no repositório local do curso, **antes** do sorteio. Assim o resultado do sorteio não pôde influenciar as hipóteses.
-- **Resultado:** {inteiro(len(amostra))} contratos, {inteiro(contagem["N+NE"])} em N+NE e {inteiro(contagem["Demais"])} nos Demais.
+- **Resultado:** {inteiro(len(amostra))} contratos, {inteiro(contagem["N+NE"])} no Norte e Nordeste e {inteiro(contagem["Demais"])} nas demais regiões.
 """
 )
+
+st.subheader("Os painéis")
+for caminho, rotulo, icone in PAGINAS_PAINEIS:
+    link_pagina(caminho, rotulo, icone)

@@ -17,9 +17,10 @@ st.set_page_config(layout="wide", page_title="BNDES e desigualdade regional")
 # A página padrão abre na raiz do app (o Streamlit ignora o `url_path` da página
 # padrão); as outras três abrem em /populacao, /amostra e /inferencia.
 paginas = [
-    st.Page(PASTA / "base.py", title="Base e amostra", url_path="base", default=True),
+    st.Page(PASTA / "base.py", title="Base de dados e amostra", url_path="base", default=True),
     st.Page(PASTA / "populacao.py", title="Painel 1 — População", url_path="populacao"),
     st.Page(PASTA / "amostra.py", title="Painel 2 — Amostra", url_path="amostra"),
     st.Page(PASTA / "inferencia.py", title="Painel 3 — Inferência", url_path="inferencia"),
 ]
-st.navigation(paginas).run()
+# Menu no topo: os gráficos ganham a largura que a barra lateral ocupava.
+st.navigation(paginas, position="top").run()

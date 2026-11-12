@@ -9,28 +9,25 @@ if _RAIZ not in sys.path:
 
 import streamlit as st  # noqa: E402
 
-from dados_app import carregar  # noqa: E402
-from tela import br, inteiro, painel_descritivo, pct  # noqa: E402
+from dados_app import carregar, carregar_ibge, carregar_malhas  # noqa: E402
+from tela import (  # noqa: E402
+    cartoes_descritivos,
+    inteiro,
+    painel_descritivo,
+    pergunta,
+    seletor_nivel,
+    voltar_para_base,
+)
 
 pop, amostra, meta = carregar()
 
+voltar_para_base()
 st.title("Painel 1 — População")
-nne = pop["grupo"] == "N+NE"
-valor_nne = pop.loc[nne, "valor_contratado"].sum() / pop["valor_contratado"].sum()
-infra = pop.groupby("grupo")["setor"].apply(lambda s: (s == "INFRAESTRUTURA").mean())
-prazo = pop.groupby("grupo")["prazo_amortizacao"].mean()
-spread = pop.groupby("grupo")["spread"].mean()
+pergunta(f"Onde estão os {inteiro(len(pop))} contratos do BNDES, e em que condições?")
 st.markdown(
-    f"Todos os **{inteiro(len(pop))} contratos** da população. Os números aqui são os **valores "
-    "verdadeiros**, que o Painel 3 usa para conferir a inferência feita com a amostra."
+    f"Todos os **{inteiro(len(pop))} contratos** da população. Os números aqui são os **valores verdadeiros**, "
+    "que o Painel 3 usa para conferir a inferência feita com a amostra."
 )
-st.markdown(
-    f"""
-**Em poucas linhas.**
-- N+NE têm **{pct(nne.mean())} dos contratos**, mas **{pct(valor_nne)} do valor contratado**: os contratos de lá são, em média, maiores.
-- O spread médio é quase igual nos dois grupos ({br(spread["N+NE"], 2)} contra {br(spread["Demais"], 2)} % a.a.).
-- O prazo de amortização médio é bem maior em N+NE ({inteiro(prazo["N+NE"])} contra {inteiro(prazo["Demais"])} meses), onde a infraestrutura pesa mais ({pct(infra["N+NE"], 0)} dos contratos, contra {pct(infra["Demais"], 0)} nos Demais).
-"""
-)
-
-painel_descritivo(pop, amostra, "populacao")
+cartoes_descritivos(pop, amostra, "populacao")
+nivel = seletor_nivel("populacao")
+painel_descritivo(pop, amostra, "populacao", carregar_ibge(), carregar_malhas(), nivel)
