@@ -12,6 +12,7 @@ from calculo import (
     condicoes_proporcao,
     descritiva,
     filtrar_subcreditos,
+    h0_e_verdadeira,
     ic_media,
     julgar_decisao,
     ler_csv_bndes,
@@ -326,6 +327,23 @@ def test_julgar_todas_as_combinacoes():
     assert julgar_decisao(False, -0.3, 0.0, "menor") == "erro tipo II"
     with pytest.raises(ValueError):
         julgar_decisao(True, 0.3, 0.0, "maior")
+
+
+def test_h0_e_verdadeira_e_o_que_julgar_decisao_usa():
+    # bilateral: só na igualdade; "menor": no valor de H0 e acima dele
+    assert h0_e_verdadeira(0.196, 0.196, "bilateral") is True
+    assert h0_e_verdadeira(0.1905, 0.196, "bilateral") is False
+    assert h0_e_verdadeira(0.3, 0.0, "menor") is True
+    assert h0_e_verdadeira(0.0, 0.0, "menor") is True
+    assert h0_e_verdadeira(-0.3, 0.0, "menor") is False
+    with pytest.raises(ValueError):
+        h0_e_verdadeira(0.3, 0.0, "maior")
+    # a decisão é julgada com a mesma resposta: rejeitar H0 verdadeira é erro tipo I, e assim por diante
+    for verdadeiro, v0, alt in [(0.196, 0.196, "bilateral"), (0.19, 0.354, "bilateral"),
+                                (0.3, 0.0, "menor"), (0.0, 0.0, "menor"), (-0.3, 0.0, "menor")]:
+        h0 = h0_e_verdadeira(verdadeiro, v0, alt)
+        assert julgar_decisao(True, verdadeiro, v0, alt) == ("erro tipo I" if h0 else "acerto")
+        assert julgar_decisao(False, verdadeiro, v0, alt) == ("acerto" if h0 else "erro tipo II")
 
 
 def test_hipoteses_gravadas_como_no_desenho():

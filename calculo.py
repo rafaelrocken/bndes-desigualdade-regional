@@ -344,18 +344,26 @@ def poder_welch(
     return float(stats.norm.cdf(-z - deslocamento) + stats.norm.sf(z - deslocamento))
 
 
-def julgar_decisao(rejeita: bool, valor_verdadeiro: float, valor_h0: float, alternativa: str) -> str:
-    """Compara a decisão do teste com a verdade conhecida da população.
+def h0_e_verdadeira(valor_verdadeiro: float, valor_h0: float, alternativa: str) -> bool:
+    """H0 é verdadeira na população?
 
-    H0 é verdadeira quando `valor_verdadeiro == valor_h0` (bilateral) ou quando
-    `valor_verdadeiro >= valor_h0` ("menor"). Rejeitar uma H0 verdadeira é "erro tipo I";
-    não rejeitar uma H0 falsa é "erro tipo II"; os outros dois casos são "acerto".
+    Sim quando `valor_verdadeiro == valor_h0` (bilateral) ou quando
+    `valor_verdadeiro >= valor_h0` ("menor"). É a pergunta que `julgar_decisao` responde
+    antes de comparar com a decisão do teste.
     """
     _validar_alternativa(alternativa)
     if alternativa == "bilateral":
-        h0_verdadeira = valor_verdadeiro == valor_h0
-    else:
-        h0_verdadeira = valor_verdadeiro >= valor_h0
+        return valor_verdadeiro == valor_h0
+    return valor_verdadeiro >= valor_h0
+
+
+def julgar_decisao(rejeita: bool, valor_verdadeiro: float, valor_h0: float, alternativa: str) -> str:
+    """Compara a decisão do teste com a verdade conhecida da população.
+
+    Rejeitar uma H0 verdadeira (ver `h0_e_verdadeira`) é "erro tipo I"; não rejeitar uma H0
+    falsa é "erro tipo II"; os outros dois casos são "acerto".
+    """
+    h0_verdadeira = h0_e_verdadeira(valor_verdadeiro, valor_h0, alternativa)
     if rejeita:
         return "erro tipo I" if h0_verdadeira else "acerto"
     return "acerto" if h0_verdadeira else "erro tipo II"

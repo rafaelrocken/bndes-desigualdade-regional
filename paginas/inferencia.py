@@ -118,7 +118,7 @@ for h in c.HIPOTESES:
             R[hid]["limite_unilateral"] = r["diferenca"] + float(stats.t.ppf(1 - ALFA, r["gl"])) * ep
     resultado = R[hid]
     resultado["contem"] = resultado["ic"][0] <= resultado["verdadeiro"] <= resultado["ic"][1]
-    resultado["h0_verdadeira"] = (resultado["verdadeiro"] == v0) if alt == "bilateral" else (resultado["verdadeiro"] >= v0)
+    resultado["h0_verdadeira"] = c.h0_e_verdadeira(resultado["verdadeiro"], v0, alt)
     resultado["julgamento"] = c.julgar_decisao(r["rejeita"], resultado["verdadeiro"], v0, alt)
 
 

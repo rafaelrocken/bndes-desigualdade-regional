@@ -745,7 +745,7 @@ for h in c.HIPOTESES:
             extra = (f"unilateral (−∞; {f(lim)}], contém o verdadeiro: {'sim' if verdadeiro <= lim else 'não'}, "
                      f"contém 0: {'sim' if lim >= 0 else 'não'}")
     contem = ic[0] <= verdadeiro <= ic[1]
-    h0_verdadeira = (verdadeiro == v0) if alt == "bilateral" else (verdadeiro >= v0)
+    h0_verdadeira = c.h0_e_verdadeira(verdadeiro, v0, alt)
     julgamento = c.julgar_decisao(r["rejeita"], verdadeiro, v0, alt)
     numeros[hid] = {
         "verdadeiro": verdadeiro, "estimativa": estimativa, "ic": ic, "contem": contem,
