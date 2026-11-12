@@ -24,12 +24,6 @@ from calculo import (
     teste_z_proporcao,
 )
 
-# O pytest coleta como teste toda função de nome `test*` que aparece no módulo, e
-# `teste_welch` e `teste_z_proporcao` (nomes do plano) começam assim. Sem a marca,
-# elas seriam coletadas como testes com fixtures inexistentes.
-teste_welch.__test__ = False
-teste_z_proporcao.__test__ = False
-
 
 def _sub(linhas):
     """Monta subcréditos sintéticos com as colunas que `agregar_contratos` usa.
