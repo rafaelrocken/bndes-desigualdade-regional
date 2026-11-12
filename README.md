@@ -53,7 +53,7 @@ As hipóteses H1 a H5, α = 0,05 e a semente do sorteio (20261112) foram gravada
 - **IBGE**, PIB por estado em 2023: [SIDRA, tabela 5938](https://sidra.ibge.gov.br/tabela/5938) (Contas Regionais).
 - **IBGE**, população por estado no Censo 2022: [SIDRA, tabela 4709](https://sidra.ibge.gov.br/tabela/4709).
 - **IBGE**, malhas dos estados e das regiões para os mapas: [API de malhas](https://servicodados.ibge.gov.br/api/docs/malhas?versao=3).
-- **Logos** (UFRGS, INF, BNDES e IBGE): origem e condições de cada um em `assets/FONTES.md`.
+- **Logos** (UFRGS, BNDES e IBGE): origem e condições de cada um em `assets/FONTES.md`.
 
 ## Como rodar
 

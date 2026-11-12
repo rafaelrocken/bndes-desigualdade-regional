@@ -220,13 +220,12 @@ def _logo(nome: str) -> str:
 
 
 def cabecalho() -> None:
-    """Cabeçalho comum: o logo da UFRGS no canto (`st.logo`) e, numa faixa com borda, os
-    logos da UFRGS e do Instituto de Informática, a pergunta do trabalho e a autoria."""
+    """Cabeçalho comum: o logo da UFRGS no canto (`st.logo`) e, numa faixa com borda, o
+    logo da UFRGS, a pergunta do trabalho e a autoria."""
     st.logo(_logo("ufrgs.svg"), size="large", link="https://www.ufrgs.br/")
     with st.container(border=True):
-        ufrgs, inf, texto = st.columns([0.7, 1.1, 8], vertical_alignment="center", gap="medium")
+        ufrgs, texto = st.columns([0.7, 9], vertical_alignment="center", gap="medium")
         ufrgs.image(_logo("ufrgs.svg"), width=64)
-        inf.image(_logo("inf-ufrgs.jpg"), width=110)
         texto.markdown(f"**{TITULO_APP}**")
         texto.caption(AUTORIA)
 
@@ -501,8 +500,11 @@ def painel_descritivo(pop: pd.DataFrame, amostra: pd.DataFrame, qual: str, ibge:
 
     max_contratos = fim([v for r in resumos for v in r["participacao"]], 0.05)
     max_valor = fim([v for r in resumos for v in r["participacao_valor"]], 0.05)
+    # Inclui a linha "Norte e Nordeste (soma)" do modo Região: as duas réguas e a soma dos contratos.
+    soma_nne = [float(r.loc[r["grupo"] == "N+NE", "participacao"].sum()) for r in resumos]
+    reguas_testes = [h["p0_ou_delta0"] for h in c.HIPOTESES[:2]]
     max_reguas = fim([v for r in resumos for col in ("participacao", "parte_pib", "parte_populacao")
-                      for v in r[col]], 0.05)
+                      for v in r[col]] + soma_nne + reguas_testes, 0.05)
     max_spread = fim([v for r in resumos for v in r["spread_media"].dropna()], 0.5)
     max_prazo = fim([v for r in resumos for v in r["prazo_amortizacao_media"].dropna()], 20)
 

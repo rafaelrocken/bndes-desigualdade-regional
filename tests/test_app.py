@@ -383,19 +383,21 @@ def test_cabecalho_e_rodape_em_todas_as_paginas(pagina):
 
 def test_logos_existem_com_a_fonte_registrada():
     fontes = (tela.ASSETS / "FONTES.md").read_text(encoding="utf-8")
-    for nome in ("ufrgs.svg", "inf-ufrgs.jpg", "bndes.svg", "ibge.svg"):
+    assert not (tela.ASSETS / "inf-ufrgs.jpg").exists() and "inf-ufrgs" not in fontes
+    for nome in ("ufrgs.svg", "bndes.svg", "ibge.svg"):
         arquivo = tela.ASSETS / nome
         assert arquivo.exists() and arquivo.stat().st_size < 100_000
         assert f"`{nome}`" in fontes
 
 
 def test_logos_do_bndes_e_do_ibge_so_no_rodape():
-    """O cabeçalho usa só os logos da UFRGS e do INF; BNDES e IBGE ficam no rodapé."""
+    """O cabeçalho usa só o logo da UFRGS; BNDES e IBGE ficam no rodapé."""
     import inspect
 
     cabecalho = inspect.getsource(tela.cabecalho)
     rodape = inspect.getsource(tela.rodape)
     assert "bndes" not in cabecalho.lower() and "ibge" not in cabecalho.lower()
+    assert "inf-ufrgs" not in cabecalho
     assert "bndes.svg" in rodape and "ibge.svg" in rodape
 
 
@@ -463,3 +465,12 @@ def test_tres_reguas_na_regiao_tem_a_linha_da_soma():
 def test_frase_do_estado_sem_concordancia_de_genero():
     textos = _textos(_com_nivel("paginas/populacao.py", "estado"))
     assert "sozinho" not in textos and "Só **São Paulo (SP)** tem" in textos
+
+
+def test_escala_das_tres_reguas_cobre_a_linha_da_soma():
+    """O fim do eixo das três réguas inclui a linha "Norte e Nordeste (soma)" com folga para o rótulo."""
+    for pagina in ("paginas/populacao.py", "paginas/amostra.py"):
+        spec = next(s for s in _specs(_com_nivel(pagina, "regiao"))
+                    if _titulo_do_grafico(s).startswith("Contratos, PIB e população"))
+        fim = spec["layer"][0]["encoding"]["x"]["scale"]["domain"][1]
+        assert fim >= 1.15 * max(h["p0_ou_delta0"] for h in tela.c.HIPOTESES[:2])
