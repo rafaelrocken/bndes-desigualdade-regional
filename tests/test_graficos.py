@@ -529,3 +529,130 @@ def test_distribuicao_p_chapeu_conta_todos_os_sorteios_e_comeca_em_zero():
 def test_distribuicao_p_chapeu_sem_valores_levanta_erro():
     with pytest.raises(ValueError, match="vazio"):
         distribuicao_p_chapeu([], {"a": 0.2}, "t", "f")
+
+
+# ---------------------------------------------------------------- região ou estado (Task 7b)
+
+import graficos as g  # noqa: E402
+
+
+@pytest.fixture(scope="module")
+def ibge() -> pd.DataFrame:
+    return pd.read_csv(PASTA_DADOS / "ibge_uf.csv", comment="#")
+
+
+@pytest.fixture(scope="module")
+def malhas() -> dict:
+    return {
+        "regiao": json.loads((PASTA_DADOS / "regiao.geojson").read_text(encoding="utf-8")),
+        "estado": json.loads((PASTA_DADOS / "uf.geojson").read_text(encoding="utf-8")),
+    }
+
+
+@pytest.mark.parametrize("nivel, quantas", [("regiao", 5), ("estado", 27)])
+def test_unidades_por_nivel_com_nomes_por_extenso(ibge, nivel, quantas):
+    unid = g.unidades(ibge, nivel)
+    assert len(unid) == quantas
+    assert unid["parte_pib"].sum() == pytest.approx(1) and unid["parte_populacao"].sum() == pytest.approx(1)
+    if nivel == "regiao":
+        assert list(unid["nome"]) == ["Norte", "Nordeste", "Centro-Oeste", "Sudeste", "Sul"]
+    else:
+        assert "Pernambuco (PE)" in set(unid["nome"])
+    assert set(unid["grupo"]) == {"N+NE", "Demais"}
+
+
+def test_por_unidade_mostra_unidade_sem_contrato(pop_pequena, ibge):
+    resumo = g.por_unidade(pop_pequena, g.unidades(ibge, "estado"), "estado")
+    assert len(resumo) == 27 and resumo["contratos"].sum() == len(pop_pequena)
+    sem = resumo[resumo["codigo"] == "AC"].iloc[0]
+    assert sem["contratos"] == 0 and np.isnan(sem["spread_media"])
+    assert resumo["participacao"].sum() == pytest.approx(1)
+
+
+@pytest.mark.parametrize("nivel, quantas", [("regiao", 5), ("estado", 27)])
+def test_ranking_ordem_decrescente_cor_do_grupo_e_eixo_dado(pop_pequena, ibge, nivel, quantas):
+    d = g.ranking(pop_pequena, g.unidades(ibge, nivel), nivel, "t", max_x=0.6).to_dict()
+    dados = _tabelas(d)[0]
+    assert len(dados) == quantas
+    barras = d["layer"][0]["encoding"]
+    ordem = barras["y"]["sort"]
+    partes = {r["nome"]: r["parte"] for r in dados}
+    assert [partes[u] for u in ordem] == sorted(partes.values(), reverse=True)
+    assert barras["x"]["scale"]["domain"] == [0, 0.6]
+    assert barras["color"]["scale"]["range"] == [CORES["N+NE"], CORES["Demais"]]
+
+
+def test_mapa_escala_sequencial_com_limiares_fixos(pop_pequena, ibge, malhas):
+    for nivel in ("regiao", "estado"):
+        d = g.mapa(pop_pequena, g.unidades(ibge, nivel), nivel, malhas[nivel], "t").to_dict()
+        escala = d["encoding"]["color"]["scale"]
+        assert escala == {"domain": g.FAIXAS_MAPA, "range": g.RAMPA_MAPA}
+        assert len(g.FAIXAS_MAPA) == len(g.RAMPA_MAPA) == len(g.LIMIARES_MAPA) + 1
+        for f in d["data"]["values"]:
+            assert f["properties"]["faixa"] == g.faixa_do_mapa(f["properties"]["parte"])
+        assert len(d["data"]["values"]) == (5 if nivel == "regiao" else 27)
+        assert d["mark"]["type"] == "geoshape"
+
+
+@pytest.mark.parametrize("nivel", ["regiao", "estado"])
+def test_tres_reguas_tres_barras_por_unidade_ordenadas_pelos_contratos(pop_pequena, ibge, nivel):
+    unid = g.unidades(ibge, nivel)
+    d = g.tres_reguas(pop_pequena, unid, nivel, "t", max_x=0.6).to_dict()
+    dados = _tabelas(d)[0]
+    assert len(dados) == 3 * len(unid)
+    contratos = {r["nome"]: r["parte"] for r in dados if r["regua"] == g.REGUAS["contratos"]}
+    ordem = d["layer"][0]["encoding"]["y"]["sort"]
+    assert [contratos[u] for u in ordem] == sorted(contratos.values(), reverse=True)
+    pib = {r["nome"]: r["parte"] for r in dados if r["regua"] == g.REGUAS["pib"]}
+    assert sum(pib.values()) == pytest.approx(1)
+    texto = json.dumps(d, ensure_ascii=False)
+    assert FONTE in texto and g.FONTE_IBGE in texto
+
+
+def test_tres_reguas_nordeste_com_os_numeros_do_ibge(ibge):
+    unid = g.unidades(ibge, "regiao").set_index("nome")
+    assert round(100 * unid.loc["Nordeste", "parte_pib"], 1) == 13.8
+    assert round(100 * unid.loc["Nordeste", "parte_populacao"], 1) == 26.9
+
+
+def test_condicoes_rotulo_com_n_e_barra_comeca_em_zero(pop_pequena, ibge):
+    d = g.condicoes(pop_pequena, g.unidades(ibge, "estado"), "estado", "spread", "t", max_x=5).to_dict()
+    dados = _tabelas(d)[0]
+    assert len(dados) == 27
+    assert any("(n = " in r["rotulo"] for r in dados)
+    assert sum(r["rotulo"] == "sem contratos" for r in dados) == 27 - pop_pequena["uf"].nunique()
+    assert d["layer"][0]["encoding"]["x"]["scale"]["domain"] == [0, 5]
+
+
+def test_construtores_novos_tem_titulo_fonte_e_legenda(pop_pequena, ibge, malhas):
+    unid = g.unidades(ibge, "regiao")
+    graficos = {
+        "ranking": g.ranking(pop_pequena, unid, "regiao", "t", max_x=1),
+        "mapa": g.mapa(pop_pequena, unid, "regiao", malhas["regiao"], "t"),
+        "tres_reguas": g.tres_reguas(pop_pequena, unid, "regiao", "t", max_x=1),
+        "condicoes": g.condicoes(pop_pequena, unid, "regiao", "prazo_amortizacao", "t", max_x=200),
+    }
+    for nome, grafico in graficos.items():
+        d = grafico.to_dict()
+        assert d["title"]["text"] == "t", nome
+        assert FONTE in d["title"]["subtitle"], nome
+        assert _legendas(d), nome
+
+
+def test_teto_arredonda_para_cima_no_passo():
+    assert g.teto([0.31, 0.12], 0.05) == pytest.approx(0.35)
+    assert g.teto([0.35], 0.05) == pytest.approx(0.35)
+    assert g.teto([0.0], 0.05) == pytest.approx(0.05)
+
+
+def test_legenda_dos_grupos_por_extenso(pop_pequena):
+    cor = barras_regiao(pop_pequena, "contratos", "t").to_dict()["encoding"]["color"]
+    assert "Norte e Nordeste" in cor["legend"]["labelExpr"] and "Demais regiões" in cor["legend"]["labelExpr"]
+    assert cor["scale"]["domain"] == ["N+NE", "Demais"]  # os dados guardam os rótulos curtos
+
+
+def test_faixa_do_mapa_nos_limiares():
+    assert g.faixa_do_mapa(0.0) == "menos de 1%"
+    assert g.faixa_do_mapa(0.01) == "1% a 2%"
+    assert g.faixa_do_mapa(0.157) == "10% a 20%"
+    assert g.faixa_do_mapa(0.467) == "40% ou mais"

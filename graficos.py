@@ -39,6 +39,36 @@ GRUPO_DA_REGIAO: dict[str, str] = {
     "S": "Demais",
 }
 
+# Nomes por extenso para a tela (os dados guardam as siglas e os rótulos curtos).
+NOME_GRUPO: dict[str, str] = {"N+NE": "Norte e Nordeste", "Demais": "Demais regiões"}
+NOME_REGIAO: dict[str, str] = {
+    "N": "Norte",
+    "NE": "Nordeste",
+    "CO": "Centro-Oeste",
+    "SE": "Sudeste",
+    "S": "Sul",
+}
+NOME_SETOR: dict[str, str] = {
+    "INFRAESTRUTURA": "Infraestrutura",
+    "INDUSTRIA": "Indústria",
+    "COMERCIO/SERVICOS": "Comércio e serviços",
+    "AGROPECUÁRIA": "Agropecuária",
+}
+NOME_PORTE: dict[str, str] = {"GRANDE": "Grande", "MÉDIA": "Média", "PEQUENA": "Pequena", "MICRO": "Micro"}
+
+FONTE_IBGE = "IBGE: PIB das Contas Regionais 2023 e população do Censo 2022 (SIDRA)"
+
+# Limiares do mapa (proporção dos contratos). São constantes: a escala de cor do mapa é
+# a mesma nos Painéis 1 e 2, e no modo Região e no modo Estado, por construção.
+LIMIARES_MAPA: list[float] = [0.01, 0.02, 0.05, 0.10, 0.20, 0.40]
+# Rampa sequencial de um só matiz (roxo), clara -> escura, uma cor por classe. Fica fora
+# do azul e do vermelhão para o mapa não sugerir grupo onde a cor mede tamanho.
+RAMPA_MAPA: list[str] = ["#f2f0f7", "#dadaeb", "#bcbddc", "#9e9ac8", "#807dba", "#6a51a3", "#4a1486"]
+
+# Cores das réguas: os contratos levam a cor do grupo; PIB e população, dois cinzas.
+_CINZA_PIB = "#7b7b7b"
+_CINZA_POP = "#c2c2c2"
+
 # Título dos eixos das variáveis quantitativas, com a unidade.
 ROTULOS: dict[str, str] = {
     "spread": "Spread (% a.a.)",
@@ -62,12 +92,48 @@ def _titulo(texto: str, *legenda: str) -> alt.Title:
     return alt.Title(text=texto, subtitle=subtitulo, anchor="start")
 
 
-def _cor_grupo() -> alt.Color:
-    """Cor por grupo, com a escala e a legenda iguais em todos os gráficos."""
+# Expressão Vega que troca o rótulo curto do grupo pelo nome por extenso na legenda.
+_ROTULO_GRUPO = (
+    f"datum.label == 'N+NE' ? '{NOME_GRUPO['N+NE']}' : "
+    f"(datum.label == 'Demais' ? '{NOME_GRUPO['Demais']}' : datum.label)"
+)
+
+
+# No cabeçalho das facetas o Vega expõe o valor em `datum.value`, não em `datum.label`.
+_ROTULO_GRUPO_CABECALHO = (
+    f"datum.value == 'N+NE' ? '{NOME_GRUPO['N+NE']}' : "
+    f"(datum.value == 'Demais' ? '{NOME_GRUPO['Demais']}' : datum.value)"
+)
+
+
+# Rótulo de eixo numérico no padrão brasileiro: troca o ponto decimal pela vírgula (e a
+# vírgula de milhar pelo ponto). O Vega formata com o ponto americano.
+_NUMERO_BR = "replace(replace(replace(datum.label, ',', '#'), '.', ','), '#', '.')"
+
+
+def _eixo(**opcoes) -> alt.Axis:
+    """Eixo numérico com rótulos em português (vírgula decimal). O título vai no canal."""
+    return alt.Axis(labelExpr=_NUMERO_BR, **opcoes)
+
+
+def _br(x: float, casas: int = 1) -> str:
+    """Número com vírgula decimal e ponto de milhar (o Vega formataria com ponto)."""
+    texto = f"{x:,.{casas}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return "−" + texto[1:] if texto.startswith("-") else texto
+
+
+def _pct(x: float, casas: int = 1) -> str:
+    return _br(100 * x, casas) + "%"
+
+
+def _cor_grupo(posicao: str = "right") -> alt.Color:
+    """Cor por grupo, com a escala e a legenda iguais em todos os gráficos. `posicao` põe a
+    legenda à direita (padrão) ou no topo, quando o gráfico divide a linha com outro."""
+    opcoes = {"orient": "top", "direction": "horizontal"} if posicao == "top" else {}
     return alt.Color(
         "grupo:N",
         scale=alt.Scale(domain=GRUPOS, range=[CORES[g] for g in GRUPOS]),
-        legend=alt.Legend(title="Grupo de regiões"),
+        legend=alt.Legend(title="Grupo de regiões", labelExpr=_ROTULO_GRUPO, **opcoes),
     )
 
 
@@ -125,13 +191,13 @@ def barras_regiao(df: pd.DataFrame, medida: str, titulo: str) -> alt.Chart:
 
     return (
         alt.Chart(dados, title=_titulo(titulo))
-        .mark_bar()
+        .mark_bar(cornerRadiusEnd=4)
         .encode(
             y=alt.Y("regiao:N", sort=ordem, title="Região"),
             x=alt.X(
                 "participacao:Q",
                 scale=alt.Scale(domain=[0, 1]),
-                axis=alt.Axis(format=".0%", title=eixo),
+                axis=alt.Axis(format=".0%", title=eixo, tickCount=8),
             ),
             color=_cor_grupo(),
             tooltip=[
@@ -144,7 +210,7 @@ def barras_regiao(df: pd.DataFrame, medida: str, titulo: str) -> alt.Chart:
     )
 
 
-def barras_setor(df: pd.DataFrame, titulo: str) -> alt.Chart:
+def barras_setor(df: pd.DataFrame, titulo: str, *, legenda: tuple[str, ...] = ()) -> alt.Chart:
     """Composição por setor dentro de cada grupo: a participação de cada setor nos
     contratos do grupo (soma 1 em cada grupo), em barras agrupadas.
 
@@ -169,15 +235,15 @@ def barras_setor(df: pd.DataFrame, titulo: str) -> alt.Chart:
     dados = pd.DataFrame(linhas)
 
     return (
-        alt.Chart(dados, title=_titulo(titulo))
-        .mark_bar()
+        alt.Chart(dados, title=_titulo(titulo, *legenda))
+        .mark_bar(cornerRadiusEnd=4)
         .encode(
-            y=alt.Y("setor:N", sort=ordem, title="Setor"),
+            y=alt.Y("setor:N", sort=ordem, title=None, axis=alt.Axis(labelLimit=200)),
             yOffset=alt.YOffset("grupo:N", sort=GRUPOS),
             x=alt.X(
                 "participacao:Q",
                 scale=alt.Scale(domain=[0, 1]),
-                axis=alt.Axis(format=".0%", title="Participação nos contratos do grupo (%)"),
+                axis=alt.Axis(format=".0%", title="Participação nos contratos do grupo (%)", tickCount=10),
             ),
             color=_cor_grupo(),
             tooltip=[
@@ -187,7 +253,7 @@ def barras_setor(df: pd.DataFrame, titulo: str) -> alt.Chart:
                 alt.Tooltip("contratos:Q", title="Contratos"),
             ],
         )
-        .properties(width=_LARGURA, height=300)
+        .properties(width=_LARGURA, height=420)
     )
 
 
@@ -246,6 +312,8 @@ def histograma(
     *,
     rotulo: str | None = None,
     max_y: float | None = None,
+    legenda: tuple[str, ...] = (),
+    largura: int = _LARGURA,
 ) -> alt.FacetChart:
     """Histograma de `coluna` com um quadro por grupo, um acima do outro.
 
@@ -256,6 +324,7 @@ def histograma(
     valores não ausentes do grupo, de modo que valores fora do `dominio` ficam sem
     barra mas contam no denominador. O eixo x usa `dominio` com `clamp`.
 
+    `legenda` entra no subtítulo, acima da fonte; `largura` é a de cada quadro.
     `rotulo` troca o título do eixo x (por padrão vem de `ROTULOS`). `max_y` fixa o
     eixo y em [0, max_y]; para comparar população e amostra, passe nos dois
     gráficos o valor de `max_proporcao_histograma([pop, amostra], ...)`. Sem
@@ -273,7 +342,7 @@ def histograma(
                 "inicio:Q",
                 bin="binned",
                 scale=alt.Scale(domain=list(dominio), clamp=True),
-                title=eixo_x,
+                title=eixo_x, axis=_eixo(),
             ),
             x2="fim:Q",
             y=alt.Y(
@@ -281,9 +350,9 @@ def histograma(
                 scale=escala_y,
                 axis=alt.Axis(format=".0%"),
                 # duas linhas: o título se repete em cada quadro e numa linha só não cabe
-                title=["Proporção dos contratos", "do grupo em cada faixa (%)"],
+                title=["Proporção dos", "contratos do grupo"],
             ),
-            color=_cor_grupo(),
+            color=_cor_grupo("top"),
             tooltip=[
                 alt.Tooltip("grupo:N", title="Grupo"),
                 alt.Tooltip("inicio:Q", title="Faixa: de", format=",.3~g"),
@@ -292,16 +361,16 @@ def histograma(
                 alt.Tooltip("proporcao:Q", title="Proporção do grupo", format=".1%"),
             ],
         )
-        .properties(width=_LARGURA, height=150)
+        .properties(width=largura, height=140)
         .facet(
             row=alt.Row(
                 "grupo:N",
                 sort=GRUPOS,
                 title=None,
-                header=alt.Header(labelAngle=0, labelAlign="left", labelFontSize=12),
+                header=alt.Header(labelAngle=0, labelAlign="left", labelFontSize=13, labelExpr=_ROTULO_GRUPO_CABECALHO),
             ),
         )
-        .properties(title=_titulo(titulo))
+        .properties(title=_titulo(titulo, *legenda))
     )
 
 
@@ -332,6 +401,7 @@ def boxplot(
     titulo: str,
     *,
     rotulo: str | None = None,
+    legenda: tuple[str, ...] = (),
 ) -> alt.LayerChart:
     """Boxplot horizontal de `coluna`, uma caixa por grupo, no mesmo `dominio`.
 
@@ -351,17 +421,17 @@ def boxplot(
 
     escala = alt.Scale(domain=list(dominio), clamp=True)
     eixo_x = _rotulo(coluna, rotulo)
-    y = alt.Y("grupo:N", sort=GRUPOS, title="Grupo")
+    y = alt.Y("grupo:N", sort=GRUPOS, title=None, axis=alt.Axis(labelExpr=_ROTULO_GRUPO, labelLimit=160))
     cor = _cor_grupo()
 
     bigodes = (
         alt.Chart(caixas)
         .mark_rule(strokeWidth=2)
-        .encode(x=alt.X("inferior:Q", scale=escala, title=eixo_x), x2="superior:Q", y=y, color=cor)
+        .encode(x=alt.X("inferior:Q", scale=escala, title=eixo_x, axis=_eixo()), x2="superior:Q", y=y, color=cor)
     )
     corpo = (
         alt.Chart(caixas)
-        .mark_bar(size=34, opacity=0.9)
+        .mark_bar(size=48, opacity=0.9, cornerRadius=3)
         .encode(
             x=alt.X("q1:Q", scale=escala, title=eixo_x),
             x2="q3:Q",
@@ -380,7 +450,7 @@ def boxplot(
     )
     traco = (
         alt.Chart(caixas)
-        .mark_tick(color="white", thickness=3, size=34, orient="vertical")
+        .mark_tick(color="white", thickness=3, size=48, orient="vertical")
         .encode(x=alt.X("mediana:Q", scale=escala, title=eixo_x), y=y)
     )
     camadas = [bigodes, corpo, traco]
@@ -393,7 +463,7 @@ def boxplot(
         camadas.append(pontos)
 
     return alt.layer(*camadas).properties(
-        title=_titulo(titulo), width=_LARGURA, height=170
+        title=_titulo(titulo, *legenda), width=_LARGURA, height=330
     )
 
 
@@ -422,8 +492,8 @@ def qqplot(x, titulo: str) -> alt.LayerChart:
         {"teorico": extremos, "observado": intercepto + inclinacao * extremos, "serie": nome_reta}
     )
 
-    x_enc = alt.X("teorico:Q", scale=alt.Scale(zero=False), title="Quantis teóricos da normal padrão")
-    y_enc = alt.Y("observado:Q", scale=alt.Scale(zero=False), title="Valores observados (ordenados)")
+    x_enc = alt.X("teorico:Q", scale=alt.Scale(zero=False), title="Quantis teóricos da normal padrão", axis=_eixo())
+    y_enc = alt.Y("observado:Q", scale=alt.Scale(zero=False), title="Valores observados (ordenados)", axis=_eixo())
     cor = alt.Color(
         "serie:N",
         scale=alt.Scale(domain=[nome_pontos, nome_reta], range=[_CINZA, _VERDE]),
@@ -436,7 +506,7 @@ def qqplot(x, titulo: str) -> alt.LayerChart:
     )
     camada_reta = alt.Chart(reta).mark_line(strokeWidth=2).encode(x=x_enc, y=y_enc, color=cor)
     return alt.layer(camada_pontos, camada_reta).properties(
-        title=_titulo(titulo), width=_LARGURA, height=320
+        title=_titulo(titulo), width=_LARGURA, height=380
     )
 
 
@@ -469,7 +539,7 @@ def distribuicao_p_chapeu(
         alt.Chart(barras)
         .mark_bar(color="#BBBBBB")
         .encode(
-            x=alt.X("inicio:Q", bin="binned", scale=escala_x, title=eixo_x),
+            x=alt.X("inicio:Q", bin="binned", scale=escala_x, title=eixo_x, axis=_eixo()),
             x2="fim:Q",
             y=alt.Y("sorteios:Q", scale=alt.Scale(zero=True), title="Número de sorteios"),
             tooltip=[
@@ -497,7 +567,7 @@ def distribuicao_p_chapeu(
         )
     )
     return alt.layer(camada_barras, camada_linhas).properties(
-        title=alt.Title(text=titulo, subtitle=fonte, anchor="start"), width=_LARGURA, height=260
+        title=alt.Title(text=titulo, subtitle=fonte, anchor="start"), width=_LARGURA, height=440
     )
 
 
@@ -517,7 +587,7 @@ def intervalos(resultados: list[dict], titulo: str) -> alt.FacetChart:
     nome_estimativa = "Estimativa da amostra (ponto)"
     nome_verdadeiro = "Valor verdadeiro da população (losango)"
     escala = alt.Scale(zero=False)
-    eixo = alt.Axis(title=None, tickCount=5, labelOverlap="greedy")  # a unidade vai no rótulo da linha
+    eixo = _eixo(title=None, tickCount=5, labelOverlap="greedy")  # a unidade vai no rótulo da linha
 
     base = alt.Chart(dados)
     faixa = base.mark_rule(strokeWidth=3, color=_CINZA).encode(
@@ -576,4 +646,367 @@ def intervalos(resultados: list[dict], titulo: str) -> alt.FacetChart:
         )
         .resolve_scale(x="independent")
         .properties(title=_titulo(titulo, legenda))
+    )
+
+
+# ---------------------------------------------------------------------------------------
+# Região ou estado: as unidades, o ranking, o mapa, as três réguas e as condições
+# ---------------------------------------------------------------------------------------
+
+NIVEIS: tuple[str, ...] = ("regiao", "estado")
+# Coluna dos dados que guarda a unidade em cada nível.
+COLUNA_DO_NIVEL: dict[str, str] = {"regiao": "regiao", "estado": "uf"}
+
+
+def _validar_nivel(nivel: str) -> None:
+    if nivel not in NIVEIS:
+        raise ValueError(f"nivel deve ser 'regiao' ou 'estado', e não {nivel!r}")
+
+
+def unidades(ibge: pd.DataFrame, nivel: str) -> pd.DataFrame:
+    """As unidades de um nível, com o nome por extenso, o grupo e as réguas do IBGE.
+
+    `ibge` tem uma linha por UF com `uf, nome, regiao, pib_2023, populacao_2022`
+    (`dados/ibge_uf.csv`). Devolve `codigo, nome, grupo, parte_pib, parte_populacao`:
+    5 linhas no nível "regiao" (Norte, Nordeste, ...) e 27 no nível "estado"
+    ("Pernambuco (PE)"). As partes somam 1 em cada nível.
+    """
+    _validar_nivel(nivel)
+    base = ibge.copy()
+    base["parte_pib"] = base["pib_2023"] / base["pib_2023"].sum()
+    base["parte_populacao"] = base["populacao_2022"] / base["populacao_2022"].sum()
+    if nivel == "estado":
+        saida = pd.DataFrame(
+            {
+                "codigo": base["uf"],
+                "nome": base["nome"] + " (" + base["uf"] + ")",
+                "grupo": base["regiao"].map(GRUPO_DA_REGIAO),
+                "parte_pib": base["parte_pib"],
+                "parte_populacao": base["parte_populacao"],
+            }
+        )
+    else:
+        somas = base.groupby("regiao")[["parte_pib", "parte_populacao"]].sum().reindex(REGIOES)
+        saida = pd.DataFrame(
+            {
+                "codigo": REGIOES,
+                "nome": [NOME_REGIAO[r] for r in REGIOES],
+                "grupo": [GRUPO_DA_REGIAO[r] for r in REGIOES],
+                "parte_pib": somas["parte_pib"].to_numpy(),
+                "parte_populacao": somas["parte_populacao"].to_numpy(),
+            }
+        )
+    return saida.reset_index(drop=True)
+
+
+def por_unidade(df: pd.DataFrame, unid: pd.DataFrame, nivel: str) -> pd.DataFrame:
+    """Resumo dos contratos de `df` em cada unidade de `unid` (todas aparecem, mesmo sem contrato).
+
+    Colunas acrescentadas: `contratos`, `participacao` (dos contratos), `valor`,
+    `participacao_valor`, e, para spread e prazo, a média (`spread_media`,
+    `prazo_amortizacao_media`) e o número de contratos com valor (`spread_n`,
+    `prazo_amortizacao_n`). Unidade sem contrato fica com média ausente.
+    """
+    _validar_nivel(nivel)
+    coluna = COLUNA_DO_NIVEL[nivel]
+    grupos = df.groupby(coluna)
+    saida = unid.copy()
+    contratos = grupos.size().reindex(unid["codigo"], fill_value=0).to_numpy()
+    valor = grupos["valor_contratado"].sum().reindex(unid["codigo"], fill_value=0.0).to_numpy()
+    saida["contratos"] = contratos
+    saida["participacao"] = contratos / contratos.sum() if contratos.sum() else 0.0
+    saida["valor"] = valor
+    saida["participacao_valor"] = valor / valor.sum() if valor.sum() else 0.0
+    for variavel in ("spread", "prazo_amortizacao"):
+        saida[f"{variavel}_media"] = grupos[variavel].mean().reindex(unid["codigo"]).to_numpy()
+        saida[f"{variavel}_n"] = grupos[variavel].count().reindex(unid["codigo"], fill_value=0).to_numpy()
+    return saida
+
+
+def teto(valores, passo: float) -> float:
+    """O menor múltiplo de `passo` acima do maior valor (o fim de um eixo que começa em zero)."""
+    maior = float(np.nanmax(np.asarray(list(valores), dtype=float)))
+    return float(passo * np.ceil(round(maior / passo, 9))) if maior > 0 else passo
+
+
+def _eixo_unidades(nivel: str, ordem: list[str]) -> alt.Y:
+    return alt.Y(
+        "nome:N",
+        sort=ordem,
+        title=None,
+        axis=alt.Axis(labelLimit=220, labelFontSize=12 if nivel == "regiao" else 11, ticks=False),
+    )
+
+
+# O Streamlit desenha os gráficos esticados com autosize "fit": a altura declarada inclui
+# título, subtítulo, legenda e eixo. Cada altura soma essa sobra à área das barras.
+_SOBRA = 120
+
+
+def _altura(nivel: str, linhas_por_unidade: int = 1, por_linha: int | None = None, sobra: int = _SOBRA) -> int:
+    """Altura que dá para ler o nome de cada unidade (5 regiões ou 27 estados), mais a sobra."""
+    if por_linha is None:
+        por_linha = 44 if nivel == "regiao" else 22
+    return sobra + por_linha * linhas_por_unidade * (5 if nivel == "regiao" else 27)
+
+
+def ranking(
+    df: pd.DataFrame,
+    unid: pd.DataFrame,
+    nivel: str,
+    titulo: str,
+    *,
+    max_x: float,
+    medida: str = "contratos",
+    legenda: tuple[str, ...] = (),
+) -> alt.LayerChart:
+    """Participação de cada unidade nos contratos (ou no valor), em barras horizontais da
+    maior para a menor, na cor do grupo, com o valor escrito na ponta.
+
+    O eixo vai de 0 a `max_x`; para os Painéis 1 e 2 ficarem na mesma escala, passe nos
+    dois o mesmo `max_x` (calculado com a população e a amostra juntas).
+    """
+    if medida not in ("contratos", "valor"):
+        raise ValueError(f"medida deve ser 'contratos' ou 'valor', e não {medida!r}")
+    campo = "participacao" if medida == "contratos" else "participacao_valor"
+    dados = por_unidade(df, unid, nivel)[["codigo", "nome", "grupo", "contratos", campo]]
+    dados = dados.rename(columns={campo: "parte"})
+    dados["rotulo"] = [_pct(v) for v in dados["parte"]]
+    ordem = list(dados.sort_values("parte", ascending=False, kind="stable")["nome"])
+    eixo = "% dos contratos" if medida == "contratos" else "% do valor contratado"
+    y = _eixo_unidades(nivel, ordem)
+    x = alt.X("parte:Q", scale=alt.Scale(domain=[0, max_x]), axis=alt.Axis(format=".0%", title=eixo, tickCount=6))
+    tooltip = [
+        alt.Tooltip("nome:N", title="Onde"),
+        alt.Tooltip("grupo:N", title="Grupo"),
+        alt.Tooltip("rotulo:N", title=eixo),
+        alt.Tooltip("contratos:Q", title="Contratos", format=",d"),
+    ]
+    barras = (
+        alt.Chart(dados)
+        .mark_bar(cornerRadiusEnd=4, size=22 if nivel == "regiao" else 13)
+        .encode(y=y, x=x, color=_cor_grupo(), tooltip=tooltip)
+    )
+    textos = (
+        alt.Chart(dados)
+        .mark_text(align="left", dx=4, fontSize=11, color="#333333")
+        .encode(y=y, x=x, text="rotulo:N")
+    )
+    return alt.layer(barras, textos).properties(
+        title=_titulo(titulo, *legenda), width=_LARGURA, height=_altura(nivel)
+    )
+
+
+def _rotulo_limiar(x: float) -> str:
+    return f"{x * 100:.0f}%"
+
+
+# Faixas do mapa, uma por cor da rampa: a legenda mostra as 7, sempre, nos dois painéis.
+FAIXAS_MAPA = (
+    [f"menos de {_rotulo_limiar(LIMIARES_MAPA[0])}"]
+    + [f"{_rotulo_limiar(a)} a {_rotulo_limiar(b)}" for a, b in zip(LIMIARES_MAPA, LIMIARES_MAPA[1:])]
+    + [f"{_rotulo_limiar(LIMIARES_MAPA[-1])} ou mais"]
+)
+
+
+def faixa_do_mapa(parte: float) -> str:
+    """Faixa de `FAIXAS_MAPA` em que cai a participação (o limiar entra na faixa de cima)."""
+    return FAIXAS_MAPA[int(np.searchsorted(LIMIARES_MAPA, parte, side="right"))]
+
+
+def mapa(
+    df: pd.DataFrame,
+    unid: pd.DataFrame,
+    nivel: str,
+    malha: dict,
+    titulo: str,
+    *,
+    legenda: tuple[str, ...] = (),
+) -> alt.Chart:
+    """Mapa do Brasil com a cor da unidade (região ou estado) pela % dos contratos.
+
+    `malha` é o GeoJSON do nível (`dados/regiao.geojson` ou `dados/uf.geojson`), com a
+    propriedade `regiao` ou `uf`. A escala de cor é sequencial, de um só matiz, em faixas
+    com os limiares fixos de `LIMIARES_MAPA` (`FAIXAS_MAPA`): o mesmo domínio nos Painéis
+    1 e 2 e nos dois níveis, e a legenda mostra todas as faixas.
+    """
+    resumo = por_unidade(df, unid, nivel).set_index("codigo")
+    chave = "regiao" if nivel == "regiao" else "uf"
+    feicoes = []
+    for feicao in malha["features"]:
+        codigo = feicao["properties"][chave]
+        linha = resumo.loc[codigo]
+        feicoes.append(
+            {
+                "type": "Feature",
+                "geometry": feicao["geometry"],
+                "properties": {
+                    "nome": linha["nome"],
+                    "grupo": NOME_GRUPO[linha["grupo"]],
+                    "parte": float(linha["participacao"]),
+                    "rotulo": _pct(linha["participacao"]),
+                    "faixa": faixa_do_mapa(float(linha["participacao"])),
+                    "contratos": int(linha["contratos"]),
+                },
+            }
+        )
+    return (
+        alt.Chart(alt.Data(values=feicoes), title=_titulo(titulo, *legenda))
+        .mark_geoshape(stroke="#ffffff", strokeWidth=0.8)
+        .encode(
+            color=alt.Color(
+                "properties.faixa:O",
+                scale=alt.Scale(domain=FAIXAS_MAPA, range=RAMPA_MAPA),
+                legend=alt.Legend(title="% dos contratos", orient="right", symbolType="square",
+                                  symbolSize=220, symbolStrokeWidth=0),
+            ),
+            tooltip=[
+                alt.Tooltip("properties.nome:N", title="Onde"),
+                alt.Tooltip("properties.grupo:N", title="Grupo"),
+                alt.Tooltip("properties.rotulo:N", title="% dos contratos"),
+                alt.Tooltip("properties.contratos:Q", title="Contratos", format=",d"),
+            ],
+        )
+        .project(type="mercator")
+        .properties(width=400, height=420)
+    )
+
+
+REGUAS: dict[str, str] = {
+    "contratos": "% dos contratos (BNDES)",
+    "pib": "% do PIB (IBGE, 2023)",
+    "populacao": "% da população (IBGE, 2022)",
+}
+
+
+def tres_reguas(
+    df: pd.DataFrame,
+    unid: pd.DataFrame,
+    nivel: str,
+    titulo: str,
+    *,
+    max_x: float,
+    legenda: tuple[str, ...] = (),
+) -> alt.LayerChart:
+    """Para cada unidade, três barras lado a lado: % dos contratos de `df`, % do PIB e
+    % da população. Ordenadas pela % dos contratos, da maior para a menor.
+
+    A barra dos contratos leva a cor do grupo da unidade; PIB e população, dois cinzas
+    (a régua é a referência, não o assunto). O eixo vai de 0 a `max_x`, o mesmo nos
+    Painéis 1 e 2. No nível "regiao" cada barra traz o valor escrito; no "estado", com 81
+    barras, o valor fica na dica e na tabela.
+    """
+    resumo = por_unidade(df, unid, nivel)
+    ordem = list(resumo.sort_values("participacao", ascending=False, kind="stable")["nome"])
+    serie_contratos = {"N+NE": "Contratos: Norte e Nordeste", "Demais": "Contratos: demais regiões"}
+    linhas = []
+    for _, u in resumo.iterrows():
+        for regua, campo in (("contratos", "participacao"), ("pib", "parte_pib"), ("populacao", "parte_populacao")):
+            linhas.append(
+                {
+                    "nome": u["nome"],
+                    "regua": REGUAS[regua],
+                    "serie": serie_contratos[u["grupo"]] if regua == "contratos" else REGUAS[regua],
+                    "parte": float(u[campo]),
+                    "rotulo": _pct(u[campo]),
+                }
+            )
+    dados = pd.DataFrame(linhas)
+    series = [serie_contratos["N+NE"], serie_contratos["Demais"], REGUAS["pib"], REGUAS["populacao"]]
+    cor = alt.Color(
+        "serie:N",
+        scale=alt.Scale(domain=series, range=[CORES["N+NE"], CORES["Demais"], _CINZA_PIB, _CINZA_POP]),
+        legend=alt.Legend(title="Régua", orient="top", direction="horizontal", labelLimit=260, columns=2),
+    )
+    y = _eixo_unidades(nivel, ordem)
+    deslocamento = alt.YOffset("regua:N", sort=list(REGUAS.values()))
+    x = alt.X("parte:Q", scale=alt.Scale(domain=[0, max_x]),
+              axis=alt.Axis(format=".0%", title="Participação (%)", tickCount=10))
+    barras = (
+        alt.Chart(dados)
+        .mark_bar(cornerRadiusEnd=3)
+        .encode(
+            y=y,
+            yOffset=deslocamento,
+            x=x,
+            color=cor,
+            tooltip=[
+                alt.Tooltip("nome:N", title="Onde"),
+                alt.Tooltip("regua:N", title="Régua"),
+                alt.Tooltip("rotulo:N", title="Participação"),
+            ],
+        )
+    )
+    camadas = [barras]
+    if nivel == "regiao":
+        camadas.append(
+            alt.Chart(dados)
+            .mark_text(align="left", dx=4, fontSize=11, color="#333333")
+            .encode(y=y, yOffset=deslocamento, x=x, text="rotulo:N")
+        )
+    fonte = [*legenda, FONTE, FONTE_IBGE]
+    return alt.layer(*camadas).properties(
+        title=alt.Title(text=titulo, subtitle=fonte, anchor="start"),
+        width=_LARGURA,
+        height=_altura(nivel, 3, por_linha=20 if nivel == "regiao" else 10, sobra=210),
+    )
+
+
+def condicoes(
+    df: pd.DataFrame,
+    unid: pd.DataFrame,
+    nivel: str,
+    coluna: str,
+    titulo: str,
+    *,
+    max_x: float,
+    legenda: tuple[str, ...] = (),
+) -> alt.LayerChart:
+    """Média de `coluna` (spread ou prazo) em cada unidade, em barras horizontais da maior
+    para a menor, na cor do grupo, com a média e o n escritos na ponta.
+
+    Unidade sem contrato com valor aparece no fim, sem barra, com "sem contratos". O eixo
+    vai de 0 a `max_x`, o mesmo nos Painéis 1 e 2.
+    """
+    if coluna not in ("spread", "prazo_amortizacao"):
+        raise ValueError(f"coluna deve ser 'spread' ou 'prazo_amortizacao', e não {coluna!r}")
+    resumo = por_unidade(df, unid, nivel)
+    casas = 2 if coluna == "spread" else 1
+    dados = pd.DataFrame(
+        {
+            "nome": resumo["nome"],
+            "grupo": resumo["grupo"],
+            "media": resumo[f"{coluna}_media"],
+            "n": resumo[f"{coluna}_n"],
+        }
+    )
+    dados["rotulo"] = [
+        f"{_br(m, casas)} (n = {_br(n, 0)})" if n > 0 else "sem contratos" for m, n in zip(dados["media"], dados["n"])
+    ]
+    dados["posicao"] = dados["media"].fillna(0.0)
+    ordem = list(dados.sort_values("posicao", ascending=False, kind="stable")["nome"])
+    y = _eixo_unidades(nivel, ordem)
+    eixo = ROTULOS[coluna].replace("Prazo de amortização", "Prazo médio").replace("Spread", "Spread médio")
+    x = alt.X("posicao:Q", scale=alt.Scale(domain=[0, max_x]), axis=_eixo(title=eixo, tickCount=6))
+    barras = (
+        alt.Chart(dados)
+        .mark_bar(cornerRadiusEnd=4, size=22 if nivel == "regiao" else 13)
+        .encode(
+            y=y,
+            x=x,
+            color=_cor_grupo(),
+            tooltip=[
+                alt.Tooltip("nome:N", title="Onde"),
+                alt.Tooltip("grupo:N", title="Grupo"),
+                alt.Tooltip("rotulo:N", title="Média (n)"),
+            ],
+        )
+    )
+    textos = (
+        alt.Chart(dados)
+        .mark_text(align="left", dx=4, fontSize=11, color="#333333")
+        .encode(y=y, x=x, text="rotulo:N")
+    )
+    return alt.layer(barras, textos).properties(
+        title=_titulo(titulo, *legenda), width=_LARGURA, height=_altura(nivel)
     )
