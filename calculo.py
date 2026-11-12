@@ -1,8 +1,11 @@
 """Cálculo puro do trabalho final da IA003: o BNDES compensa a desigualdade regional?
 
 Este módulo não depende do Streamlit. Ele lê a base de operações não automáticas
-do BNDES (dados abertos) e, nas próximas etapas, agrega subcréditos em contratos,
-sorteia a amostra e roda os testes de hipóteses.
+do BNDES (dados abertos), agrega os subcréditos em contratos (a população), calcula o
+tamanho da amostra e a sorteia, e roda a inferência: descritiva, intervalos de confiança,
+testes Z de uma proporção e t de Welch, condições de validade, poder, o julgamento de cada
+decisão contra a população (erro tipo I, erro tipo II ou acerto) e as cinco hipóteses
+pré-registradas (`HIPOTESES`). O aplicativo e o caderno chamam estas funções.
 """
 import math
 from pathlib import Path
