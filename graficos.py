@@ -440,6 +440,67 @@ def qqplot(x, titulo: str) -> alt.LayerChart:
     )
 
 
+def distribuicao_p_chapeu(
+    p_chapeus, referencias: dict[str, float], titulo: str, fonte: str, bins: int = 25
+) -> alt.LayerChart:
+    """Histograma das proporções amostrais (p̂, de 0 a 1) de muitos sorteios, em %, com
+    linhas verticais de referência.
+
+    `referencias` leva, na ordem da legenda, o nome e o valor (de 0 a 1) de até três
+    linhas: a primeira em roxo (o valor verdadeiro, como em `intervalos`), a segunda em
+    verde (a estimativa da amostra) e a terceira em cinza-escuro tracejado. As barras
+    contam sorteios e começam em zero. `fonte` substitui a fonte padrão no subtítulo,
+    porque os dados são sorteios da população, não a base direto.
+    """
+    valores = 100 * np.asarray(p_chapeus, dtype=float)
+    if valores.size == 0:
+        raise ValueError("p_chapeus está vazio")
+    if not 1 <= len(referencias) <= 3:
+        raise ValueError("passe de uma a três referências")
+    contagens, bordas = np.histogram(valores, bins=bins)
+    barras = pd.DataFrame({"inicio": bordas[:-1], "fim": bordas[1:], "sorteios": contagens})
+    nomes = list(referencias)
+    linhas = pd.DataFrame({"referencia": nomes, "valor": [100 * v for v in referencias.values()]})
+    linhas["tracejado"] = [i == 2 for i in range(len(nomes))]
+
+    eixo_x = "p̂ = contratos N+NE na amostra (%)"
+    escala_x = alt.Scale(zero=False)
+    camada_barras = (
+        alt.Chart(barras)
+        .mark_bar(color="#BBBBBB")
+        .encode(
+            x=alt.X("inicio:Q", bin="binned", scale=escala_x, title=eixo_x),
+            x2="fim:Q",
+            y=alt.Y("sorteios:Q", scale=alt.Scale(zero=True), title="Número de sorteios"),
+            tooltip=[
+                alt.Tooltip("inicio:Q", title="Faixa de p̂ (%): de", format=".1f"),
+                alt.Tooltip("fim:Q", title="até", format=".1f"),
+                alt.Tooltip("sorteios:Q", title="Sorteios"),
+            ],
+        )
+    )
+    camada_linhas = (
+        alt.Chart(linhas)
+        .mark_rule(strokeWidth=2.5)
+        .encode(
+            x=alt.X("valor:Q", scale=escala_x, title=eixo_x),
+            color=alt.Color(
+                "referencia:N",
+                scale=alt.Scale(domain=nomes, range=[_ROXO, _VERDE, "#333333"][: len(nomes)]),
+                legend=alt.Legend(title="Linhas", labelLimit=320, orient="bottom", direction="vertical"),
+            ),
+            strokeDash=alt.condition("datum.tracejado", alt.value([6, 4]), alt.value([1, 0])),
+            tooltip=[
+                alt.Tooltip("referencia:N", title="Linha"),
+                alt.Tooltip("valor:Q", title="Valor (%)", format=".2f"),
+            ],
+        )
+    )
+    return alt.layer(camada_barras, camada_linhas).properties(
+        title=alt.Title(text=titulo, subtitle=fonte, anchor="start"), width=_LARGURA, height=260
+    )
+
+
 def intervalos(resultados: list[dict], titulo: str) -> alt.FacetChart:
     """Intervalo de confiança de cada hipótese, com o valor verdadeiro da população.
 

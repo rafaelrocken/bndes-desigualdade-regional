@@ -65,6 +65,11 @@ def tabela(df: pd.DataFrame) -> None:
     st.dataframe(df, hide_index=True, width="stretch")
 
 
+def tabela_estatica(df: pd.DataFrame) -> None:
+    """Tabela estática (`st.table`): quebra o texto longo em várias linhas em vez de cortar a célula."""
+    st.table(df, hide_index=True)
+
+
 def grafico(chart) -> None:
     """Mostra um gráfico Altair na largura da coluna (gráficos em facetas mantêm a largura própria)."""
     st.altair_chart(chart, width="stretch")

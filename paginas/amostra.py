@@ -38,12 +38,43 @@ for coluna, nome, unidade in [("spread", "spread", "% a.a."), ("prazo_amortizaca
             maior = (relativa, nome, unidade, grupo, m_amo, m_pop)
 _, nome, unidade, grupo, m_amo, m_pop = maior
 casas = 2 if unidade == "% a.a." else 1
+
+
+# O valor contratado: participação por região em valor e valor médio de cada grupo.
+def _part_valor(df):
+    """Participação de cada região no valor contratado (soma 1)."""
+    soma = df.groupby("regiao")["valor_contratado"].sum()
+    return soma / soma.sum()
+
+
+dif_val = (_part_valor(amostra).reindex(p_reg_pop.index, fill_value=0) - _part_valor(pop)).abs()
+regiao_val = dif_val.idxmax()
+val_amo, val_pop = _part_valor(amostra).get(regiao_val, 0.0), _part_valor(pop)[regiao_val]
+maior_val = None  # (diferença relativa, grupo, média da amostra, média da população)
+for grupo_valor in GRUPOS:
+    m_amo_v = amostra.loc[amostra["grupo"] == grupo_valor, "valor_contratado"].mean()
+    m_pop_v = pop.loc[pop["grupo"] == grupo_valor, "valor_contratado"].mean()
+    relativa = abs(m_amo_v - m_pop_v) / m_pop_v
+    if maior_val is None or relativa > maior_val[0]:
+        maior_val = (relativa, grupo_valor, m_amo_v, m_pop_v)
+rel_v, grupo_v, m_amo_v, m_pop_v = maior_val
+max_pop, max_amo = pop["valor_contratado"].max(), amostra["valor_contratado"].max()
+maior_sorteado = bool((amostra["valor_contratado"] == max_pop).any())
+
 st.markdown(
-    f"**A amostra se parece com a população?** Sim: nas proporções por região ela fica a no máximo "
-    f"{br(100 * dif_reg.max(), 1)} ponto percentual da população ({regiao_max}), e médias, medianas e "
-    "quartis de spread e prazo andam juntos nos dois conjuntos. A maior diferença está no "
-    f"{nome} do grupo {grupo} ({br(m_amo, casas)} contra {br(m_pop, casas)} {unidade} na população), "
-    "efeito esperado da variabilidade amostral, que pesa mais no grupo menor."
+    f"**A amostra se parece com a população?** Na contagem de contratos e nas condições, sim: nas "
+    f"proporções por região ela fica a no máximo {br(100 * dif_reg.max(), 1)} ponto percentual da "
+    f"população ({regiao_max}), e médias, medianas e quartis de spread e prazo andam juntos; entre essas "
+    f"medidas, a maior diferença está no {nome} do grupo {grupo} ({br(m_amo, casas)} contra "
+    f"{br(m_pop, casas)} {unidade} na população), efeito esperado da variabilidade amostral, que pesa "
+    "mais no grupo menor. No **valor contratado**, bem menos: a participação por valor chega a se afastar "
+    f"{br(100 * dif_val.max(), 1)} pontos percentuais da população ({regiao_val}: {br(100 * val_amo, 1)}% "
+    rf"contra {br(100 * val_pop, 1)}%), e o valor médio do grupo {grupo_v} é de R\$ {br(m_amo_v / 1e6, 1)} "
+    rf"milhões na amostra contra R\$ {br(m_pop_v / 1e6, 1)} milhões na população "
+    f"({br(100 * rel_v, 0)}% de diferença). O valor tem cauda pesada: o maior contrato da população "
+    rf"(R\$ {br(max_pop / 1e9, 1)} bilhões) {'entrou' if maior_sorteado else 'não entrou'} na amostra, cujo "
+    rf"maior contrato é de R\$ {br(max_amo / 1e9, 1)} bilhões. Por isso a leitura por valor (limitação 1 "
+    "do Painel 3) é muito mais ruidosa numa amostra de contratos do que a leitura por contagem."
 )
 
 painel_descritivo(pop, amostra, "amostra")

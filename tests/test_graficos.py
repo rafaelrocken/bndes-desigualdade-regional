@@ -18,6 +18,7 @@ from graficos import (
     barras_regiao,
     barras_setor,
     boxplot,
+    distribuicao_p_chapeu,
     dominio,
     histograma,
     intervalos,
@@ -503,3 +504,28 @@ def test_graficos_com_a_populacao_e_a_amostra_reais():
         barras_regiao(base, "valor", "t").to_dict()
         barras_setor(base, "t").to_dict()
         qqplot(base["spread"], "t").to_dict()
+
+
+# ---------------------------------------------------------------- distribuicao_p_chapeu
+
+
+def test_distribuicao_p_chapeu_conta_todos_os_sorteios_e_comeca_em_zero():
+    rng = np.random.default_rng(1)
+    p = rng.binomial(913, 0.19, size=1000) / 913
+    refs = {"π verdadeiro": 0.1905, "p̂ da amostra": 0.1972, "H0 de H1": 0.196}
+    d = distribuicao_p_chapeu(p, refs, "t", "Fonte: sorteios").to_dict()
+    tabelas = _tabelas(d)
+    barras = next(t for t in tabelas if "sorteios" in t[0])
+    assert sum(r["sorteios"] for r in barras) == 1000
+    linhas = next(t for t in tabelas if "referencia" in t[0])
+    assert [r["referencia"] for r in linhas] == list(refs)
+    assert linhas[0]["valor"] == pytest.approx(19.05)
+    eixos_y = [c for c in _encodings(d) if c.get("field") == "sorteios" and "scale" in c]
+    assert eixos_y and all(c["scale"].get("zero") is True for c in eixos_y)
+    texto = json.dumps(d, ensure_ascii=False)
+    assert "Fonte: sorteios" in texto
+
+
+def test_distribuicao_p_chapeu_sem_valores_levanta_erro():
+    with pytest.raises(ValueError, match="vazio"):
+        distribuicao_p_chapeu([], {"a": 0.2}, "t", "f")

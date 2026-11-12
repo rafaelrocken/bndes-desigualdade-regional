@@ -15,8 +15,8 @@ from scipy import stats  # noqa: E402
 
 import calculo as c  # noqa: E402
 import graficos as g  # noqa: E402
-from dados_app import carregar  # noqa: E402
-from tela import GRUPOS, br, faixa, fp, grafico, inteiro, pct, tabela  # noqa: E402
+from dados_app import carregar, carregar_simulacao  # noqa: E402
+from tela import GRUPOS, br, faixa, fp, grafico, inteiro, pct, tabela, tabela_estatica  # noqa: E402
 
 ALFA = 0.05  # fixado antes do sorteio
 HIP = {h["id"]: h for h in c.HIPOTESES}
@@ -248,7 +248,10 @@ for hid, h in HIP.items():
         "Julgamento": res["julgamento"],
         "Poder": pct(res["poder"], 1),
     })
-tabela(pd.DataFrame(linhas))
+# Uma coluna por teste e uma linha por item: cinco colunas estreitas cabem na largura da página,
+# e o `st.table` quebra o texto longo em vez de cortar.
+comparacao = pd.DataFrame(linhas).set_index("Teste").T.rename_axis("Item").reset_index()
+tabela_estatica(comparacao)
 
 grafico(g.intervalos(
     [
@@ -346,6 +349,54 @@ st.markdown(
     "Cuidado: parte da diferença pode vir de N+NE terem mais contratos de infraestrutura (limitação 4)."
 )
 
+# --- Variabilidade amostral: 1.000 sorteios, pré-calculados ----------------------------
+sim = carregar_simulacao()
+REP = sim["repeticoes"]
+CHAVE_IC = {"H1": "pi", "H2": "pi", "H3": "spread", "H4": "spread", "H5": "prazo_amortizacao"}
+NOME_IC = {"pi": "π (Wald)", "spread": "δ do spread (Welch)", "prazo_amortizacao": "δ do prazo (Welch)"}
+
+st.subheader("Variabilidade amostral: e se o sorteio fosse outro?")
+st.markdown(
+    f"Tudo acima vem de **uma** amostra. Para ver o efeito da variabilidade amostral, repetimos o sorteio "
+    f"**{inteiro(REP)} vezes**, com as sementes {inteiro(sim['semente_inicial'])} a "
+    f"{inteiro(sim['semente_final'])} (nenhuma é a semente do trabalho), sempre com n = {inteiro(sim['n'])}, e "
+    "refizemos os cinco testes em cada amostra, com as mesmas funções de cálculo. A conta foi feita uma vez, "
+    "fora do app, e os resultados estão gravados no repositório (`dados/simulacao.json`, gerado por "
+    "`ferramentas/simular_sorteios.py`). É um exercício de estudo: nenhum número oficial dos testes vem daqui."
+)
+tabela_estatica(pd.DataFrame([
+    {
+        "Teste": hid,
+        "Poder pela fórmula": pct(R[hid]["poder"], 1),
+        f"Amostras que rejeitam H0 (de {inteiro(REP)})": pct(sim["rejeicao"][hid], 1),
+        "Intervalo de 95%": NOME_IC[CHAVE_IC[hid]],
+        "Intervalos que contêm o valor verdadeiro": pct(sim["cobertura"][CHAVE_IC[hid]], 1),
+    }
+    for hid in HIP
+]))
+p_chapeus = [xi / sim["n"] for xi in sim["x_nne"]]
+p_hat = R["H1"]["estimativa"]
+p0_h1 = HIP["H1"]["p0_ou_delta0"]
+grafico(g.distribuicao_p_chapeu(
+    p_chapeus,
+    {
+        f"π verdadeiro da população ({pct(pi_pop, 2)})": pi_pop,
+        f"p̂ da nossa amostra ({pct(p_hat, 2)})": p_hat,
+        f"valor de H0 no teste H1 ({pct(p0_h1, 1)})": p0_h1,
+    },
+    f"A proporção amostral varia de sorteio para sorteio ({inteiro(REP)} sorteios)",
+    f"Fonte: {inteiro(REP)} sorteios de n = {inteiro(sim['n'])} da população de {inteiro(len(pop))} contratos "
+    "(BNDES, operações não automáticas, dados abertos)",
+))
+dp_p = float(pd.Series(p_chapeus).std(ddof=1))
+ep_formula = math.sqrt(pi_pop * (1 - pi_pop) / sim["n"])
+abaixo = sum(p < p_hat for p in p_chapeus) / REP
+st.caption(
+    f"Nos {inteiro(REP)} sorteios, p̂ foi de {pct(min(p_chapeus), 1)} a {pct(max(p_chapeus), 1)}, com desvio "
+    f"padrão de {br(100 * dp_p, 2)} ponto percentual; a fórmula do erro padrão, com o π verdadeiro, dá "
+    f"{br(100 * ep_formula, 2)}. O p̂ da nossa amostra ficou acima de {pct(abaixo, 0)} dos sorteios."
+)
+
 st.subheader("Fomos azarados?")
 erros_ii = [hid for hid in R if R[hid]["julgamento"] == "erro tipo II"]
 acertos = [hid for hid in R if R[hid]["julgamento"] == "acerto" and R[hid]["teste"]["rejeita"]]
@@ -358,13 +409,14 @@ def lista(ids: list[str]) -> str:
 
 if erros_ii:
     poderes = [R[hid]["poder"] for hid in erros_ii]
+    partes = [f"{pct(sim['rejeicao'][hid], 1)} das amostras no {hid}" for hid in erros_ii]
+    rejeicoes = partes[0] if len(partes) == 1 else ", ".join(partes[:-1]) + " e " + partes[-1]
     st.markdown(
         f"{numeros[len(erros_ii)]} dos cinco testes ({lista(erros_ii)}) deram erro tipo II. Não foi azar: foi "
         "**falta de poder diante de diferenças verdadeiras muito pequenas**. Com poderes de "
         f"{pct(min(poderes), 1)} a {pct(max(poderes), 1)}, em {pct(1 - max(poderes), 0)} a "
-        f"{pct(1 - min(poderes), 0)} das amostras possíveis o resultado seria o mesmo. O caderno de cálculo, "
-        "no mesmo repositório, repete o sorteio 1.000 vezes e confirma: a fração de amostras que rejeitam H0 "
-        "fica perto do poder calculado."
+        f"{pct(1 - min(poderes), 0)} das amostras possíveis o resultado seria o mesmo. A simulação confirma: "
+        f"nos {inteiro(REP)} sorteios, H0 foi rejeitada em {rejeicoes}, perto do poder da fórmula."
         + (f" Os testes em que a diferença verdadeira é grande ({lista(acertos)}) rejeitaram, como deveriam."
            if acertos else "")
     )
@@ -374,14 +426,17 @@ st.markdown(
     "prática."
 )
 todos_contem = all(R[hid]["contem"] for hid in R)
+coberturas = list(sim["cobertura"].values())
 st.markdown(
     f"**E os intervalos?** Os três intervalos (o de π, que serve a H1 e H2; o de δ do spread, que serve a H3 "
     f"e H4; e o de δ do prazo, de H5) {'contêm' if todos_contem else 'nem todos contêm'} o valor verdadeiro. "
-    "Isso não é garantido: o método produz intervalos que contêm o valor verdadeiro em cerca de 95% das "
-    "amostras possíveis (um pouco mais aqui, porque os erros padrão ignoram a correção para população "
-    "finita, limitação 8). Sem a população à mão, não saberíamos se o nosso intervalo é um dos que erram. É "
-    "isso que \"95% de confiança\" quer dizer: uma propriedade do método, e não uma probabilidade sobre o "
-    "intervalo que calculamos."
+    f"Isso não é garantido: ao longo dos {inteiro(REP)} sorteios, os intervalos cobriram o valor verdadeiro "
+    f"em {pct(min(coberturas), 1)} a {pct(max(coberturas), 1)} das amostras, um pouco acima de 95% porque os "
+    "erros padrão ignoram a correção para população finita (limitação 8). Em "
+    f"{pct(1 - max(coberturas), 1)} a {pct(1 - min(coberturas), 1)} das amostras o intervalo erraria, e sem a "
+    "população à mão não saberíamos se o nosso é um desses casos. É isso que \"95% de confiança\" quer dizer: "
+    "uma propriedade do método, ao longo de muitas amostras, e não uma probabilidade sobre o intervalo que "
+    "calculamos."
 )
 
 

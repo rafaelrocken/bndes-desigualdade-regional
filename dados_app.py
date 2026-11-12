@@ -19,3 +19,9 @@ def carregar() -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     amostra = pd.read_parquet(PASTA_DADOS / "amostra.parquet")
     meta = json.loads((PASTA_DADOS / "metadados.json").read_text(encoding="utf-8"))
     return pop, amostra, meta
+
+
+@st.cache_data
+def carregar_simulacao() -> dict:
+    """Resultado dos 1.000 sorteios, gravado por `ferramentas/simular_sorteios.py` (o app não simula)."""
+    return json.loads((PASTA_DADOS / "simulacao.json").read_text(encoding="utf-8"))

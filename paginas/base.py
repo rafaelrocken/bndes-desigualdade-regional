@@ -12,7 +12,7 @@ import streamlit as st  # noqa: E402
 
 import calculo as c  # noqa: E402
 from dados_app import carregar  # noqa: E402
-from tela import br, inteiro, pct, tabela  # noqa: E402
+from tela import br, inteiro, pct, tabela, tabela_estatica  # noqa: E402
 
 pop, amostra, meta = carregar()
 N = len(pop)
@@ -85,7 +85,7 @@ st.markdown(
 )
 
 st.markdown("**Variáveis usadas**")
-tabela(
+tabela_estatica(
     pd.DataFrame(
         [
             ("grupo (N+NE ou Demais)", "qualitativa nominal", "evento de interesse de H1 e H2 (o contrato ser N+NE) e divisão dos grupos em H3 a H5"),
@@ -101,7 +101,7 @@ tabela(
 )
 
 st.markdown("**Regras de agregação** (como vários subcréditos viram um contrato)")
-tabela(
+tabela_estatica(
     pd.DataFrame(
         [
             ("região (N+NE ou Demais)", "a da UF com a maior parte do valor contratado (79 contratos têm mais de uma UF)"),

@@ -101,6 +101,49 @@ def test_painel_1_mostra_qualidade_dos_dados():
     assert "prazo de amortização = 0" in celulas
 
 
+def test_base_tabelas_de_texto_longo_nao_cortam():
+    """Variáveis e regras de agregação vão em `st.table` (quebra linha), não em `st.dataframe`."""
+    at = _rodar("paginas/base.py")
+    estaticas = " ".join(" ".join(map(str, t.value.to_numpy().ravel())) for t in at.table)
+    assert "TAXA FIXA EM US$" in estaticas  # a regra longa do spread
+    assert "qualitativa nominal" in estaticas  # a tabela de variáveis
+    interativas = " ".join(" ".join(map(str, d.value.to_numpy().ravel())) for d in at.dataframe)
+    assert "TAXA FIXA EM US$" not in interativas
+
+
+def test_painel_2_fala_do_valor():
+    """A frase de semelhança cobre também o valor, onde estão as maiores diferenças."""
+    at = _rodar("paginas/amostra.py")
+    frase = next(m.value for m in at.markdown if "se parece com a população" in m.value)
+    assert "valor" in frase and "R$" in frase.replace("\\$", "$")
+    assert "SE" in frase  # a região com a maior diferença na participação por valor
+    # o grupo citado na maior diferença de spread/prazo é o mesmo cuja média aparece entre parênteses
+    import re
+
+    import pandas as pd
+
+    from tela import br
+
+    amostra = pd.read_parquet(RAIZ / "dados" / "amostra.parquet")
+    achado = re.search(r"no (spread|prazo médio) do grupo (N\+NE|Demais) \(([^ ]+) contra", frase)
+    assert achado, frase
+    coluna = "spread" if achado.group(1) == "spread" else "prazo_amortizacao"
+    casas = 2 if coluna == "spread" else 1
+    media = amostra.loc[amostra["grupo"] == achado.group(2), coluna].mean()
+    assert achado.group(3) == br(media, casas)
+
+
+def test_inferencia_mostra_a_simulacao():
+    at = _rodar("paginas/inferencia.py")
+    texto = _textos(at)
+    assert "1.000 sorteios" in texto
+    celulas = " ".join(" ".join(map(str, d.value.to_numpy().ravel())) for d in [*at.dataframe, *at.table])
+    assert "Poder pela fórmula" in " ".join(" ".join(map(str, d.value.columns)) for d in [*at.dataframe, *at.table]) \
+        or "Poder pela fórmula" in celulas
+    # 6 QQ-plots (H3, H4, H5) + intervalos + o histograma de p̂ nos 1.000 sorteios
+    assert _graficos(at) == 8
+
+
 def test_painel_2_tem_coluna_populacao():
     at = _rodar("paginas/amostra.py")
     colunas = [" ".join(map(str, d.value.columns)) for d in at.dataframe]
