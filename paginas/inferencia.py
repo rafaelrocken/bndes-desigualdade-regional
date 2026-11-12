@@ -447,7 +447,7 @@ def aba_comparacao() -> None:
     ))
     st.caption("H1 e H2 dividem o mesmo intervalo para π; H3 e H4, o mesmo intervalo bilateral para δ do spread.")
 
-    st.markdown("**A média de cada grupo: população × amostra** (item b do enunciado: estimar a média populacional)")
+    st.markdown("**A média de cada grupo: população × amostra** (estimar a média populacional de cada grupo)")
     linhas = []
     for var, nome in NOME_VAR.items():
         casas = 3 if var == "spread" else 2
