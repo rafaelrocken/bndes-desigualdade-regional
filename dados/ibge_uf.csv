@@ -1,0 +1,32 @@
+# Fonte: IBGE, gerado por ferramentas/baixar_ibge.py
+# pib_2023: PIB a preços correntes, mil reais, Contas Regionais 2023 (SIDRA 5938): https://apisidra.ibge.gov.br/values/t/5938/n3/all/v/37/p/2023
+# populacao_2022: população residente, Censo 2022 (SIDRA 4709): https://apisidra.ibge.gov.br/values/t/4709/n3/all/v/93/p/2022
+# nome e regiao: API de localidades do IBGE: https://servicodados.ibge.gov.br/api/v1/localidades/estados
+uf,nome,regiao,pib_2023,populacao_2022
+AC,Acre,N,26291321,830018
+AL,Alagoas,NE,89688932,3127683
+AM,Amazonas,N,161794976,3941613
+AP,Amapá,N,28020120,733759
+BA,Bahia,NE,430987853,14141626
+CE,Ceará,NE,232239257,8794957
+DF,Distrito Federal,CO,365669108,2817381
+ES,Espírito Santo,SE,209829732,3833712
+GO,Goiás,CO,336746975,7056495
+MA,Maranhão,NE,149227195,6776699
+MG,Minas Gerais,SE,971977551,20539989
+MS,Mato Grosso do Sul,CO,184402118,2757013
+MT,Mato Grosso,CO,273008586,3658649
+PA,Pará,N,254546511,8120131
+PB,Paraíba,NE,96963174,3974687
+PE,Pernambuco,NE,270474919,9058931
+PI,Piauí,NE,80916856,3271199
+PR,Paraná,S,670919162,11444380
+RJ,Rio de Janeiro,SE,1172871443,16055174
+RN,Rio Grande do Norte,NE,101740275,3302729
+RO,Rondônia,N,76456179,1581196
+RR,Roraima,N,25124805,636707
+RS,Rio Grande do Sul,S,650107022,10882965
+SC,Santa Catarina,S,513392973,7610361
+SE,Sergipe,NE,60816662,2210004
+SP,São Paulo,SE,3444814033,44411238
+TO,Tocantins,N,64317699,1511460
