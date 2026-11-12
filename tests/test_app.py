@@ -336,7 +336,11 @@ def test_setores_com_acento_nas_tabelas():
 def test_cada_pagina_abre_com_a_pergunta_e_os_numeros_grandes(pagina):
     at = _rodar(pagina)
     corpo = [m.value for m in at.markdown if m.value != f"**{tela.TITULO_APP}**"]  # sem o cabeçalho
-    assert corpo[0].startswith("#### ") and corpo[0].endswith("?")
+    if pagina == "paginas/base.py":
+        # na raiz a pergunta do trabalho é a do cabeçalho; a página não a repete
+        assert not any(m.startswith("#### ") and tela.TITULO_APP in m for m in corpo)
+    else:
+        assert corpo[0].startswith("#### ") and corpo[0].endswith("?")
     assert 3 <= len(at.metric) - (4 if "populacao" in pagina or "amostra" in pagina else 0) <= 4
 
 
@@ -393,3 +397,69 @@ def test_logos_do_bndes_e_do_ibge_so_no_rodape():
     rodape = inspect.getsource(tela.rodape)
     assert "bndes" not in cabecalho.lower() and "ibge" not in cabecalho.lower()
     assert "bndes.svg" in rodape and "ibge.svg" in rodape
+
+
+# ---------------------------------------------------------------- Fix round 1
+
+def _abrir_aba(relativo: str, aba: str) -> AppTest:
+    at = AppTest.from_file(str(RAIZ / relativo), default_timeout=TEMPO)
+    at.query_params["aba"] = aba
+    return at.run()
+
+
+def test_nota_da_regua_da_populacao_no_h2_na_base_e_no_painel_1():
+    """A régua de H2 (35,4%) é a soma das partes arredondadas; a soma exata (35,46%) aparece com a ressalva."""
+    for at in (_rodar("paginas/inferencia.py"), _rodar("paginas/base.py")):
+        textos = _textos(at)
+        assert "a soma exata no IBGE é 35,46%" in textos
+        assert "O pré-registro fixou 35,4%, a soma das partes já arredondadas (NE 26,9% + N 8,5%)" in textos
+        assert "a decisão não muda" in textos
+    assert "a soma exata no IBGE dá 35,46%" in _textos(_rodar("paginas/populacao.py"))
+
+
+def test_numeros_da_tela_vem_dos_dados():
+    pop, amostra, _ = tela.carregar()
+    rotulos = [r for _, r, _ in tela.paginas_paineis()]
+    assert tela.inteiro(len(pop)) in rotulos[0] and tela.inteiro(len(amostra)) in rotulos[1]
+    textos = _textos(_rodar("paginas/inferencia.py"))
+    assert "O poder baixo de H1, H3 e H4" in textos  # os três erros tipo II
+    assert "Fração amostrada de 14%" in textos and "(60% contra 33%)" in textos
+    assert "Com pelo menos" in textos
+
+
+def test_grafico_de_p_chapeu_por_extenso_e_com_a_fonte_padrao():
+    at = _rodar("paginas/inferencia.py")
+    spec = next(s for s in _specs(at) if _titulo_do_grafico(s).startswith("p̂ em"))
+    texto = json.dumps(spec, ensure_ascii=False)
+    assert "contratos do Norte e Nordeste na amostra" in texto and "N+NE" not in texto
+    assert "baixado em" in texto
+
+
+@pytest.mark.parametrize("nivel", ["regiao", "estado"])
+def test_condicoes_marcam_media_instavel_com_a_mesma_escala(nivel):
+    escalas = []
+    for pagina in ("paginas/populacao.py", "paginas/amostra.py"):
+        specs = [s for s in _specs(_com_nivel(pagina, nivel)) if _titulo_do_grafico(s).startswith("Spread médio")]
+        opacidade = specs[0]["layer"][0]["encoding"]["opacity"]
+        escalas.append(opacidade["scale"])
+        assert "média instável" in json.dumps(opacidade, ensure_ascii=False)
+    assert escalas[0] == escalas[1]
+
+
+def test_tres_reguas_na_regiao_tem_a_linha_da_soma():
+    for pagina in ("paginas/populacao.py", "paginas/amostra.py"):
+        at = _com_nivel(pagina, "regiao")
+        elemento = next(e for e in at.get("vega_lite_chart")
+                        if _titulo_do_grafico(json.loads(e.proto.spec)).startswith("Contratos, PIB e população"))
+        spec = json.loads(elemento.proto.spec)
+        linhas = pa.ipc.open_stream(elemento.proto.datasets[0].data.data).read_all().to_pandas()
+        soma = linhas[linhas["nome"] == g.NOME_SOMA_NNE]
+        assert len(soma) == 3
+        reguas = dict(zip(soma["regua"], soma["parte"].round(3)))
+        assert reguas[g.REGUAS["pib"]] == 0.196 and reguas[g.REGUAS["populacao"]] == 0.354
+        assert spec["layer"][0]["encoding"]["y"]["sort"][0] == g.NOME_SOMA_NNE
+
+
+def test_frase_do_estado_sem_concordancia_de_genero():
+    textos = _textos(_com_nivel("paginas/populacao.py", "estado"))
+    assert "sozinho" not in textos and "Só **São Paulo (SP)** tem" in textos

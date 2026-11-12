@@ -533,7 +533,7 @@ def distribuicao_p_chapeu(
     linhas = pd.DataFrame({"referencia": nomes, "valor": [100 * v for v in referencias.values()]})
     linhas["tracejado"] = [i == 2 for i in range(len(nomes))]
 
-    eixo_x = "p̂ = contratos N+NE na amostra (%)"
+    eixo_x = "p̂ = contratos do Norte e Nordeste na amostra (%)"
     escala_x = alt.Scale(zero=False)
     camada_barras = (
         alt.Chart(barras)
@@ -872,6 +872,8 @@ def mapa(
     )
 
 
+NOME_SOMA_NNE = "Norte e Nordeste (soma)"
+
 REGUAS: dict[str, str] = {
     "contratos": "% dos contratos (BNDES)",
     "pib": "% do PIB (IBGE, 2023)",
@@ -887,9 +889,14 @@ def tres_reguas(
     *,
     max_x: float,
     legenda: tuple[str, ...] = (),
+    reguas_nne: tuple[float, float] | None = None,
 ) -> alt.LayerChart:
     """Para cada unidade, três barras lado a lado: % dos contratos de `df`, % do PIB e
     % da população. Ordenadas pela % dos contratos, da maior para a menor.
+
+    Com `reguas_nne = (régua do PIB, régua da população)`, as réguas de H1 e H2, e no nível
+    "regiao", a primeira linha é "Norte e Nordeste (soma)": os contratos do grupo somados,
+    contra as duas réguas dos testes.
 
     A barra dos contratos leva a cor do grupo da unidade; PIB e população, dois cinzas
     (a régua é a referência, não o assunto). O eixo vai de 0 a `max_x`, o mesmo nos
@@ -911,6 +918,18 @@ def tres_reguas(
                     "rotulo": _pct(u[campo]),
                 }
             )
+    if reguas_nne is not None and nivel == "regiao":
+        soma_nne = float(resumo.loc[resumo["grupo"] == "N+NE", "participacao"].sum())
+        nome_soma = NOME_SOMA_NNE
+        ordem = [nome_soma, *ordem]
+        for regua, valor in zip(REGUAS, (soma_nne, *reguas_nne)):
+            linhas.append({
+                "nome": nome_soma,
+                "regua": REGUAS[regua],
+                "serie": serie_contratos["N+NE"] if regua == "contratos" else REGUAS[regua],
+                "parte": float(valor),
+                "rotulo": _pct(valor),
+            })
     dados = pd.DataFrame(linhas)
     series = [serie_contratos["N+NE"], serie_contratos["Demais"], REGUAS["pib"], REGUAS["populacao"]]
     cor = alt.Color(
@@ -948,8 +967,13 @@ def tres_reguas(
     return alt.layer(*camadas).properties(
         title=alt.Title(text=titulo, subtitle=fonte, anchor="start"),
         width=_LARGURA,
-        height=_altura(nivel, 3, por_linha=20 if nivel == "regiao" else 10, sobra=210),
+        height=210 + (20 if nivel == "regiao" else 10) * 3 * len(ordem),
     )
+
+
+# Média com menos de N_MINIMO_MEDIA contratos sai em barra clara: oscila muito de amostra para amostra.
+N_MINIMO_MEDIA = 10
+CONFIANCA_MEDIA = (f"{N_MINIMO_MEDIA} ou mais", f"menos de {N_MINIMO_MEDIA}: média instável")
 
 
 def condicoes(
@@ -965,8 +989,9 @@ def condicoes(
     """Média de `coluna` (spread ou prazo) em cada unidade, em barras horizontais da maior
     para a menor, na cor do grupo, com a média e o n escritos na ponta.
 
-    Unidade sem contrato com valor aparece no fim, sem barra, com "sem contratos". O eixo
-    vai de 0 a `max_x`, o mesmo nos Painéis 1 e 2.
+    Unidade sem contrato com valor aparece no fim, sem barra, com "sem contratos". Média
+    com menos de `N_MINIMO_MEDIA` contratos sai em barra clara, com legenda. O eixo vai de
+    0 a `max_x`, o mesmo nos Painéis 1 e 2.
     """
     if coluna not in ("spread", "prazo_amortizacao"):
         raise ValueError(f"coluna deve ser 'spread' ou 'prazo_amortizacao', e não {coluna!r}")
@@ -984,6 +1009,7 @@ def condicoes(
         f"{_br(m, casas)} (n = {_br(n, 0)})" if n > 0 else "sem contratos" for m, n in zip(dados["media"], dados["n"])
     ]
     dados["posicao"] = dados["media"].fillna(0.0)
+    dados["amostra"] = [CONFIANCA_MEDIA[0] if n >= N_MINIMO_MEDIA else CONFIANCA_MEDIA[1] for n in dados["n"]]
     ordem = list(dados.sort_values("posicao", ascending=False, kind="stable")["nome"])
     y = _eixo_unidades(nivel, ordem)
     eixo = ROTULOS[coluna].replace("Prazo de amortização", "Prazo médio").replace("Spread", "Spread médio")
@@ -995,6 +1021,13 @@ def condicoes(
             y=y,
             x=x,
             color=_cor_grupo(),
+            # Domínio fixo: a mesma legenda nos dois painéis e nos dois níveis.
+            opacity=alt.Opacity(
+                "amostra:N",
+                scale=alt.Scale(domain=list(CONFIANCA_MEDIA), range=[1.0, 0.35]),
+                legend=alt.Legend(title="Contratos na média", labelLimit=260, symbolType="square",
+                                  symbolFillColor="#5f6b7a", symbolStrokeWidth=0),
+            ),
             tooltip=[
                 alt.Tooltip("nome:N", title="Onde"),
                 alt.Tooltip("grupo:N", title="Grupo"),

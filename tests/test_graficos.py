@@ -656,3 +656,25 @@ def test_faixa_do_mapa_nos_limiares():
     assert g.faixa_do_mapa(0.01) == "1% a 2%"
     assert g.faixa_do_mapa(0.157) == "10% a 20%"
     assert g.faixa_do_mapa(0.467) == "40% ou mais"
+
+
+def test_tres_reguas_soma_do_norte_e_nordeste_so_na_regiao(pop_pequena, ibge):
+    for nivel in ("regiao", "estado"):
+        unid = g.unidades(ibge, nivel)
+        d = g.tres_reguas(pop_pequena, unid, nivel, "t", max_x=0.6, reguas_nne=(0.196, 0.354)).to_dict()
+        dados = _tabelas(d)[0]
+        extra = 3 if nivel == "regiao" else 0
+        assert len(dados) == 3 * len(unid) + extra
+        assert any(l["nome"] == g.NOME_SOMA_NNE for l in dados) == (nivel == "regiao")
+
+
+def test_condicoes_barra_clara_com_menos_de_10_contratos(pop_pequena, ibge):
+    unid = g.unidades(ibge, "estado")
+    d = g.condicoes(pop_pequena, unid, "estado", "spread", "t", max_x=5).to_dict()
+    dados = _tabelas(d)[0]
+    for linha in dados:
+        esperado = g.CONFIANCA_MEDIA[0] if linha["n"] >= g.N_MINIMO_MEDIA else g.CONFIANCA_MEDIA[1]
+        assert linha["amostra"] == esperado
+    opacidade = d["layer"][0]["encoding"]["opacity"]
+    assert opacidade["scale"]["domain"] == list(g.CONFIANCA_MEDIA)
+    assert opacidade["legend"]["title"]
