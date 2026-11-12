@@ -15,11 +15,13 @@ from dados_app import carregar  # noqa: E402
 from tela import (  # noqa: E402
     PAGINAS_PAINEIS,
     br,
+    cabecalho,
     cartoes,
     inteiro,
     link_pagina,
     pct,
     pergunta,
+    rodape,
     tabela,
     tabela_estatica,
 )
@@ -35,14 +37,35 @@ def em_latex(numero: str) -> str:
     return numero.replace(",", "{,}")
 
 
+cabecalho()
 st.title("Base de dados e amostra")
 pergunta("O BNDES compensa a desigualdade regional?")
-st.markdown(
-    "Este app responde em **quatro partes**: esta página apresenta a base de dados e o sorteio da amostra; "
-    "o **Painel 1** descreve a população inteira; o **Painel 2** descreve a amostra, ao lado da população; e "
-    "o **Painel 3** testa as cinco hipóteses só com a amostra e confere o resultado na população. Os links "
-    "para os painéis estão no menu do topo e no fim desta página."
-)
+p0_pib, p0_pop = (h["p0_ou_delta0"] for h in c.HIPOTESES[:2])
+with st.container(border=True):
+    st.markdown(
+        "O BNDES diz trabalhar pela redução das desigualdades regionais. Este trabalho mede essa promessa nos "
+        f"**{inteiro(N)} contratos** do próprio banco, com três réguas:"
+    )
+    reguas = [
+        (":material/account_balance:", "Régua do PIB",
+         f"O Norte e o Nordeste recebem a sua parte na economia, **{pct(p0_pib)}** dos contratos?", "Teste H1"),
+        (":material/groups:", "Régua da população",
+         f"O Norte e o Nordeste recebem a sua parte nas pessoas, **{pct(p0_pop)}** dos contratos?", "Teste H2"),
+        (":material/percent:", "Régua das condições",
+         "O Norte e o Nordeste pagam um spread menor e têm prazo maior que as demais regiões?", "Testes H3, H4 e H5"),
+    ]
+    for coluna, (icone, nome, texto, teste) in zip(st.columns(3, gap="medium"), reguas):
+        with coluna.container(border=True):
+            st.markdown(f"{icone} **{nome}**  \n{texto}")
+            st.caption(teste)
+    st.markdown(
+        "Este app responde em **quatro partes**: esta página apresenta a base de dados e o sorteio da amostra; "
+        "o **Painel 1** descreve a população inteira; o **Painel 2** descreve a amostra, ao lado da população; e "
+        "o **Painel 3** testa as cinco hipóteses só com a amostra e confere o resultado na população."
+    )
+    for coluna, (caminho, rotulo, icone) in zip(st.columns(3, gap="medium"), PAGINAS_PAINEIS):
+        with coluna.container(border=True):  # a borda faz do link um botão largo, fácil de achar
+            link_pagina(caminho, rotulo, icone)
 cartoes([
     {"rotulo": "Contratos na população (N)", "valor": inteiro(N),
      "ajuda": "Contratos reembolsáveis, com UF definida, de 2002 a 2025."},
@@ -181,3 +204,5 @@ st.markdown(
 st.subheader("Os painéis")
 for caminho, rotulo, icone in PAGINAS_PAINEIS:
     link_pagina(caminho, rotulo, icone)
+
+rodape()

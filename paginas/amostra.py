@@ -21,11 +21,14 @@ from tela import (  # noqa: E402
     pergunta,
     seletor_nivel,
     voltar_para_base,
+    cabecalho,
+    rodape,
 )
 from graficos import NOME_REGIAO  # noqa: E402
 
 pop, amostra, meta = carregar()
 
+cabecalho()
 voltar_para_base()
 st.title("Painel 2 — Amostra")
 pergunta(f"A amostra de {inteiro(len(amostra))} contratos sorteados se parece com a população?")
@@ -94,3 +97,5 @@ st.markdown(
 
 nivel = seletor_nivel("amostra")
 painel_descritivo(pop, amostra, "amostra", carregar_ibge(), carregar_malhas(), nivel)
+
+rodape()

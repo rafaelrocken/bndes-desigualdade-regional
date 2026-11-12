@@ -160,6 +160,7 @@ import re  # noqa: E402
 import pyarrow as pa  # noqa: E402
 
 import graficos as g  # noqa: E402
+import tela  # noqa: E402
 
 
 def _specs(at: AppTest) -> list[dict]:
@@ -334,7 +335,8 @@ def test_setores_com_acento_nas_tabelas():
 @pytest.mark.parametrize("pagina", PAGINAS)
 def test_cada_pagina_abre_com_a_pergunta_e_os_numeros_grandes(pagina):
     at = _rodar(pagina)
-    assert at.markdown[0].value.startswith("#### ") and at.markdown[0].value.endswith("?")
+    corpo = [m.value for m in at.markdown if m.value != f"**{tela.TITULO_APP}**"]  # sem o cabeçalho
+    assert corpo[0].startswith("#### ") and corpo[0].endswith("?")
     assert 3 <= len(at.metric) - (4 if "populacao" in pagina or "amostra" in pagina else 0) <= 4
 
 
@@ -351,7 +353,8 @@ def test_raiz_tem_links_para_os_tres_paineis():
     at = AppTest.from_file(str(RAIZ / "app.py"), default_timeout=TEMPO).run()
     assert at.title[0].value == "Base de dados e amostra"
     paginas = [pagina for pagina, _ in _links(at)]
-    assert paginas == ["populacao", "amostra", "inferencia"]
+    # os botões do bloco de abertura e os links do fim da página
+    assert paginas == ["populacao", "amostra", "inferencia"] * 2
     assert "quatro partes" in _textos(at)
 
 
@@ -360,3 +363,33 @@ def test_cada_painel_tem_link_de_volta_para_a_base(pagina):
     at = AppTest.from_file(str(RAIZ / "app.py"), default_timeout=TEMPO).run()
     at.switch_page(pagina).run()
     assert ("", "Base de dados e amostra") in _links(at)  # a página da base fica na raiz
+
+
+@pytest.mark.parametrize("pagina", PAGINAS)
+def test_cabecalho_e_rodape_em_todas_as_paginas(pagina):
+    at = _rodar(pagina)
+    textos = _textos(at)
+    assert at.markdown[0].value == f"**{tela.TITULO_APP}**"  # o cabeçalho vem primeiro
+    assert tela.AUTORIA in textos
+    assert at.caption[-1].value == tela.AVISO_FONTES  # o aviso fecha a página
+    rodape = at.markdown[-1].value + at.markdown[-2].value
+    assert "dadosabertos.bndes.gov.br" in rodape and "sidra.ibge.gov.br/tabela/5938" in rodape
+    assert "sidra.ibge.gov.br/tabela/4709" in rodape
+
+
+def test_logos_existem_com_a_fonte_registrada():
+    fontes = (tela.ASSETS / "FONTES.md").read_text(encoding="utf-8")
+    for nome in ("ufrgs.svg", "inf-ufrgs.jpg", "bndes.svg", "ibge.svg"):
+        arquivo = tela.ASSETS / nome
+        assert arquivo.exists() and arquivo.stat().st_size < 100_000
+        assert f"`{nome}`" in fontes
+
+
+def test_logos_do_bndes_e_do_ibge_so_no_rodape():
+    """O cabeçalho usa só os logos da UFRGS e do INF; BNDES e IBGE ficam no rodapé."""
+    import inspect
+
+    cabecalho = inspect.getsource(tela.cabecalho)
+    rodape = inspect.getsource(tela.rodape)
+    assert "bndes" not in cabecalho.lower() and "ibge" not in cabecalho.lower()
+    assert "bndes.svg" in rodape and "ibge.svg" in rodape

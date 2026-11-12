@@ -1,10 +1,16 @@
 # Tema fixo: a aparência não depende do computador de quem abre.
+# A cor primária (abas, seletor, links) é um azul-ardósia sóbrio, distinto das cores dos
+# grupos nos gráficos (#D55E00 Norte e Nordeste, #0072B2 demais regiões), para que um
+# controle da tela nunca pareça uma legenda.
 [theme]
 base = "light"
-primaryColor = "#0072B2"
+primaryColor = "#3B4B63"
 backgroundColor = "#ffffff"
 secondaryBackgroundColor = "#f3f5f8"
 textColor = "#0f2238"
+borderColor = "#d8dee6"
+baseRadius = "0.6rem"
+baseFontSize = 16
 
 [client]
 toolbarMode = "minimal"

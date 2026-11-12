@@ -8,6 +8,9 @@ cada medida. Toda escala que depende dos dados (o fim dos eixos, o eixo vertical
 histogramas) é calculada aqui com a população e a amostra juntas, e o mapa usa
 limiares fixos; por isso a mesma escala sai nos dois painéis por construção.
 """
+import json
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -37,6 +40,8 @@ MEDIDAS = {
 CHAVE_NIVEL = "ver"
 CHAVE_COPIA = "_nivel"
 ROTULO_NIVEL = {"regiao": "Região", "estado": "Estado"}
+
+ASSETS = Path(__file__).resolve().parent / "assets"  # logos; origem de cada um em assets/FONTES.md
 
 # Caminhos das páginas, relativos ao app.py (para `st.page_link`).
 PAGINA_BASE = "paginas/base.py"
@@ -157,6 +162,67 @@ def link_pagina(caminho: str, rotulo: str, icone: str | None = None) -> None:
         st.page_link(caminho, label=rotulo, icon=icone)
     except StreamlitAPIException:
         st.caption(rotulo)
+
+
+def bloco(titulo: str | None = None):
+    """Caixa com borda que agrupa uma pergunta com o seu gráfico e os seus números.
+    Uso: `with bloco("Título"):`."""
+    caixa = st.container(border=True)
+    if titulo:
+        caixa.subheader(titulo)
+    return caixa
+
+
+# --- Cabeçalho e rodapé, iguais em todas as páginas ----------------------------------
+
+TITULO_APP = "O BNDES compensa a desigualdade regional?"
+AUTORIA = (
+    "Especialização em Inteligência Artificial Avançada · UFRGS · "
+    "IA003 Probabilidade e Estatística para IA · Rafael Rockenbach · 2026"
+)
+AVISO_FONTES = (
+    "Trabalho acadêmico independente, feito com dados abertos. "
+    "Sem vínculo com o BNDES nem com o IBGE, e sem endosso deles."
+)
+# Os logos do BNDES e do IBGE ficam só no rodapé de fontes: o app não é uma publicação deles.
+FONTES_IBGE = [
+    ("PIB das Contas Regionais 2023 (SIDRA, tabela 5938)", "https://sidra.ibge.gov.br/tabela/5938"),
+    ("População do Censo 2022 (SIDRA, tabela 4709)", "https://sidra.ibge.gov.br/tabela/4709"),
+    ("Malhas territoriais (API de malhas v3)", "https://servicodados.ibge.gov.br/api/docs/malhas?versao=3"),
+]
+
+
+def _logo(nome: str) -> str:
+    return str(ASSETS / nome)
+
+
+def cabecalho() -> None:
+    """Cabeçalho comum: o logo da UFRGS no canto (`st.logo`) e, numa faixa com borda, os
+    logos da UFRGS e do Instituto de Informática, a pergunta do trabalho e a autoria."""
+    st.logo(_logo("ufrgs.svg"), size="large", link="https://www.ufrgs.br/")
+    with st.container(border=True):
+        ufrgs, inf, texto = st.columns([0.7, 1.1, 8], vertical_alignment="center", gap="medium")
+        ufrgs.image(_logo("ufrgs.svg"), width=64)
+        inf.image(_logo("inf-ufrgs.jpg"), width=110)
+        texto.markdown(f"**{TITULO_APP}**")
+        texto.caption(AUTORIA)
+
+
+def rodape() -> None:
+    """Rodapé de fontes: os logos do BNDES e do IBGE, pequenos, cada um com o link da base
+    usada, e o aviso de que o trabalho é independente."""
+    meta = json.loads((Path(__file__).resolve().parent / "dados" / "metadados.json").read_text(encoding="utf-8"))
+    st.divider()
+    st.markdown("**Fontes dos dados**")
+    bndes, ibge = st.columns(2, gap="large")
+    with bndes:
+        st.image(_logo("bndes.svg"), width=96)
+        st.markdown(f"[Operações de financiamento: operações não automáticas (Portal de Dados Abertos do BNDES)]"
+                    f"({meta['fonte_url']})")
+    with ibge:
+        st.image(_logo("ibge.svg"), width=96)
+        st.markdown("  \n".join(f"[{rotulo}]({url})" for rotulo, url in FONTES_IBGE))
+    st.caption(AVISO_FONTES)
 
 
 def voltar_para_base() -> None:
@@ -425,96 +491,98 @@ def painel_descritivo(pop: pd.DataFrame, amostra: pd.DataFrame, qual: str, ibge:
 
     # ---------------------------------------------------------------- Onde estão
     with aba_onde:
-        maior = _unidade_maior(resumo, "participacao")
-        nne = resumo.loc[resumo["grupo"] == "N+NE", "participacao"].sum()
-        n_nne = int((unid["grupo"] == "N+NE").sum())
-        if nivel == "regiao":
-            frase = (f"O **{maior['nome']}** concentra **{pct(maior['participacao'])} dos contratos**; "
-                     f"Norte e Nordeste juntos ficam com **{pct(nne)}**.")
-        else:
-            comparacao = "mais" if maior["participacao"] > nne else "menos"
-            frase = (f"**{maior['nome']}** sozinho tem **{pct(maior['participacao'])} dos contratos**, {comparacao} "
-                     f"que os {n_nne} estados do Norte e do Nordeste juntos (**{pct(nne)}**).")
-        _leitura(frase + " Quanto mais escuro no mapa, maior a parte dos contratos; o ranking ao lado dá o número.")
-        esquerda, direita = st.columns([1, 1.15], gap="medium")
-        with esquerda:
-            grafico(g.mapa(df, unid, nivel, malha, f"% dos contratos {por_onde}", legenda=(base,)))
-        with direita:
-            grafico(g.ranking(df, unid, nivel, f"Ranking {por_onde}", max_x=max_contratos,
-                              legenda=(f"{base}. Cor: grupo de regiões.",)))
-        numeros(
-            tabela_grupos(pop, comparar),
-            tabela_unidades(pop, comparar, unid, nivel, [
-                ("contratos", "contratos", inteiro),
-                ("participacao", "% dos contratos", lambda v: pct(v, 2)),
-                ("participacao_valor", "% do valor", lambda v: pct(v, 2)),
-            ]),
-        )
+        with bloco():
+            maior = _unidade_maior(resumo, "participacao")
+            nne = resumo.loc[resumo["grupo"] == "N+NE", "participacao"].sum()
+            n_nne = int((unid["grupo"] == "N+NE").sum())
+            if nivel == "regiao":
+                frase = (f"O **{maior['nome']}** concentra **{pct(maior['participacao'])} dos contratos**; "
+                         f"Norte e Nordeste juntos ficam com **{pct(nne)}**.")
+            else:
+                comparacao = "mais" if maior["participacao"] > nne else "menos"
+                frase = (f"**{maior['nome']}** sozinho tem **{pct(maior['participacao'])} dos contratos**, {comparacao} "
+                         f"que os {n_nne} estados do Norte e do Nordeste juntos (**{pct(nne)}**).")
+            _leitura(frase + " Quanto mais escuro no mapa, maior a parte dos contratos; o ranking ao lado dá o número.")
+            esquerda, direita = st.columns([1, 1.15], gap="medium")
+            with esquerda:
+                grafico(g.mapa(df, unid, nivel, malha, f"% dos contratos {por_onde}", legenda=(base,)))
+            with direita:
+                grafico(g.ranking(df, unid, nivel, f"Ranking {por_onde}", max_x=max_contratos,
+                                  legenda=(f"{base}. Cor: grupo de regiões.",)))
+            numeros(
+                tabela_grupos(pop, comparar),
+                tabela_unidades(pop, comparar, unid, nivel, [
+                    ("contratos", "contratos", inteiro),
+                    ("participacao", "% dos contratos", lambda v: pct(v, 2)),
+                    ("participacao_valor", "% do valor", lambda v: pct(v, 2)),
+                ]),
+            )
 
-        st.subheader("Três réguas: contratos, PIB e população")
-        destaque = _unidade_maior(resumo, "participacao", "N+NE")
-        p0_pib, p0_pop = (h["p0_ou_delta0"] for h in c.HIPOTESES[:2])
-        _leitura(
-            f"**{destaque['nome']}: {pct(destaque['participacao'])} dos contratos, {pct(destaque['parte_pib'])} do PIB, "
-            f"{pct(destaque['parte_populacao'])} da população.** Norte e Nordeste juntos têm {pct(nne)} dos contratos, "
-            f"a {br(100 * abs(nne - p0_pib), 1)} ponto percentual da sua parte no PIB ({pct(p0_pib)}, régua de H1) "
-            f"e a {br(100 * abs(nne - p0_pop), 1)} pontos da sua parte na população ({pct(p0_pop)}, régua de H2)."
-        )
-        grafico(g.tres_reguas(df, unid, nivel, f"Contratos, PIB e população {por_onde}", max_x=max_reguas,
-                              legenda=(f"{base}. Ordem: % dos contratos, da maior para a menor.",)))
-        numeros(tabela_unidades(pop, comparar, unid, nivel,
-                                [("participacao", "% dos contratos", lambda v: pct(v, 1))], reguas=True))
+        with bloco("Três réguas: contratos, PIB e população"):
+            destaque = _unidade_maior(resumo, "participacao", "N+NE")
+            p0_pib, p0_pop = (h["p0_ou_delta0"] for h in c.HIPOTESES[:2])
+            _leitura(
+                f"**{destaque['nome']}: {pct(destaque['participacao'])} dos contratos, {pct(destaque['parte_pib'])} do PIB, "
+                f"{pct(destaque['parte_populacao'])} da população.** Norte e Nordeste juntos têm {pct(nne)} dos contratos, "
+                f"a {br(100 * abs(nne - p0_pib), 1)} ponto percentual da sua parte no PIB ({pct(p0_pib)}, régua de H1) "
+                f"e a {br(100 * abs(nne - p0_pop), 1)} pontos da sua parte na população ({pct(p0_pop)}, régua de H2)."
+            )
+            grafico(g.tres_reguas(df, unid, nivel, f"Contratos, PIB e população {por_onde}", max_x=max_reguas,
+                                  legenda=(f"{base}. Ordem: % dos contratos, da maior para a menor.",)))
+            numeros(tabela_unidades(pop, comparar, unid, nivel,
+                                    [("participacao", "% dos contratos", lambda v: pct(v, 1))], reguas=True))
 
-        st.subheader("E em valor contratado?")
-        valor_nne = resumo.loc[resumo["grupo"] == "N+NE", "participacao_valor"].sum()
-        maior_ou_menor = "maiores" if valor_nne > nne else "menores"
-        _leitura(
-            f"Somando reais em vez de contar contratos, Norte e Nordeste ficam com **{pct(valor_nne)} do valor**, "
-            f"contra {pct(nne)} dos contratos: os contratos de lá são, em média, {maior_ou_menor}. Os testes contam "
-            r"contratos; o BNDES e o IBGE costumam falar em valor, e um contrato de R\$ 1 mil pesa como um de "
-            r"R\$ 10 bilhões na contagem."
-        )
-        esquerda, direita = st.columns(2, gap="medium")
-        with esquerda:
-            grafico(g.ranking(df, unid, nivel, f"% do valor contratado {por_onde}", max_x=max_valor, medida="valor",
-                              legenda=(base,)))
-        with direita:
-            rotulo_log = "Valor contratado (log10 de R$: 6 = R$ 1 milhão, 9 = R$ 1 bilhão)"
-            dom = g.dominio(pop, "valor_log10")
-            max_y = g.max_proporcao_histograma([pop, amostra], "valor_log10", dom)
-            grafico(g.histograma(df, "valor_log10", dom, "Tamanho dos contratos", max_y=max_y, rotulo=rotulo_log,
-                                 legenda=(f"{base}. Escala logarítmica: cada passo multiplica o valor por 10.",),
-                                 largura=380))
-        numeros(tabela_descritiva(pop, comparar, "valor_contratado", casas=1, escala=1e6),
-                rotulo=r"Ver os números (valor contratado em R\$ milhões)")
+        with bloco("E em valor contratado?"):
+            valor_nne = resumo.loc[resumo["grupo"] == "N+NE", "participacao_valor"].sum()
+            maior_ou_menor = "maiores" if valor_nne > nne else "menores"
+            _leitura(
+                f"Somando reais em vez de contar contratos, Norte e Nordeste ficam com **{pct(valor_nne)} do valor**, "
+                f"contra {pct(nne)} dos contratos: os contratos de lá são, em média, {maior_ou_menor}. Os testes contam "
+                r"contratos; o BNDES e o IBGE costumam falar em valor, e um contrato de R\$ 1 mil pesa como um de "
+                r"R\$ 10 bilhões na contagem."
+            )
+            esquerda, direita = st.columns(2, gap="medium")
+            with esquerda:
+                grafico(g.ranking(df, unid, nivel, f"% do valor contratado {por_onde}", max_x=max_valor, medida="valor",
+                                  legenda=(base,)))
+            with direita:
+                rotulo_log = "Valor contratado (log10 de R$: 6 = R$ 1 milhão, 9 = R$ 1 bilhão)"
+                dom = g.dominio(pop, "valor_log10")
+                max_y = g.max_proporcao_histograma([pop, amostra], "valor_log10", dom)
+                grafico(g.histograma(df, "valor_log10", dom, "Tamanho dos contratos", max_y=max_y, rotulo=rotulo_log,
+                                     legenda=(f"{base}. Escala logarítmica: cada passo multiplica o valor por 10.",),
+                                     largura=340))
+            numeros(tabela_descritiva(pop, comparar, "valor_contratado", casas=1, escala=1e6),
+                    rotulo=r"Ver os números (valor contratado em R\$ milhões)")
 
     # ---------------------------------------------------------------- Condições
     with aba_condicoes:
-        medias = df.groupby("grupo")[["spread", "prazo_amortizacao"]].mean()
-        s_nne, s_dem = medias.loc["N+NE", "spread"], medias.loc["Demais", "spread"]
-        p_nne, p_dem = medias.loc["N+NE", "prazo_amortizacao"], medias.loc["Demais", "prazo_amortizacao"]
-        if abs(s_nne - s_dem) < 0.05 * s_dem:
-            sobre_spread = f"O spread médio é **quase igual** nos dois grupos ({br(s_nne, 2)} contra {br(s_dem, 2)} % a.a.)"
-        else:
-            sobre_spread = (f"O spread médio é **{'menor' if s_nne < s_dem else 'maior'}** em Norte e Nordeste "
-                            f"({br(s_nne, 2)} contra {br(s_dem, 2)} % a.a.)")
-        sobre_prazo = (f"o prazo médio de amortização é **{'maior' if p_nne > p_dem else 'menor'}** em Norte e Nordeste "
-                       f"({br(p_nne, 1)} contra {br(p_dem, 1)} meses)")
-        _leitura(f"{sobre_spread}; {sobre_prazo}. Abaixo, a média de cada {onde}, com o número de contratos (n) "
-                 "ao lado: com poucos contratos, a média oscila mais.")
-        esquerda, direita = st.columns(2, gap="medium")
-        with esquerda:
-            grafico(g.condicoes(df, unid, nivel, "spread", f"Spread médio {por_onde}", max_x=max_spread,
-                                legenda=(f"{base}. Só contratos indexados em reais.",)))
-        with direita:
-            grafico(g.condicoes(df, unid, nivel, "prazo_amortizacao", f"Prazo médio {por_onde}", max_x=max_prazo,
-                                legenda=(base,)))
-        numeros(tabela_unidades(pop, comparar, unid, nivel, [
-            ("spread_media", "spread médio (% a.a.)", lambda v: br(v, 2)),
-            ("spread_n", "n do spread", inteiro),
-            ("prazo_amortizacao_media", "prazo médio (meses)", lambda v: br(v, 1)),
-            ("prazo_amortizacao_n", "n do prazo", inteiro),
-        ]))
+        with bloco():
+            medias = df.groupby("grupo")[["spread", "prazo_amortizacao"]].mean()
+            s_nne, s_dem = medias.loc["N+NE", "spread"], medias.loc["Demais", "spread"]
+            p_nne, p_dem = medias.loc["N+NE", "prazo_amortizacao"], medias.loc["Demais", "prazo_amortizacao"]
+            if abs(s_nne - s_dem) < 0.05 * s_dem:
+                sobre_spread = f"O spread médio é **quase igual** nos dois grupos ({br(s_nne, 2)} contra {br(s_dem, 2)} % a.a.)"
+            else:
+                sobre_spread = (f"O spread médio é **{'menor' if s_nne < s_dem else 'maior'}** em Norte e Nordeste "
+                                f"({br(s_nne, 2)} contra {br(s_dem, 2)} % a.a.)")
+            sobre_prazo = (f"o prazo médio de amortização é **{'maior' if p_nne > p_dem else 'menor'}** em Norte e Nordeste "
+                           f"({br(p_nne, 1)} contra {br(p_dem, 1)} meses)")
+            _leitura(f"{sobre_spread}; {sobre_prazo}. Abaixo, a média de cada {onde}, com o número de contratos (n) "
+                     "ao lado: com poucos contratos, a média oscila mais.")
+            esquerda, direita = st.columns(2, gap="medium")
+            with esquerda:
+                grafico(g.condicoes(df, unid, nivel, "spread", f"Spread médio {por_onde}", max_x=max_spread,
+                                    legenda=(f"{base}. Só contratos indexados em reais.",)))
+            with direita:
+                grafico(g.condicoes(df, unid, nivel, "prazo_amortizacao", f"Prazo médio {por_onde}", max_x=max_prazo,
+                                    legenda=(base,)))
+            numeros(tabela_unidades(pop, comparar, unid, nivel, [
+                ("spread_media", "spread médio (% a.a.)", lambda v: br(v, 2)),
+                ("spread_n", "n do spread", inteiro),
+                ("prazo_amortizacao_media", "prazo médio (meses)", lambda v: br(v, 1)),
+                ("prazo_amortizacao_n", "n do prazo", inteiro),
+            ]))
 
         variaveis = [
             ("spread", "Spread", "% a.a.", 2,
@@ -522,50 +590,51 @@ def painel_descritivo(pop: pd.DataFrame, amostra: pd.DataFrame, qual: str, ibge:
             ("prazo_amortizacao", "Prazo de amortização", "meses", 1, "Todos os contratos."),
         ]
         for coluna, titulo, unidade, casas, nota in variaveis:
-            st.subheader(f"{titulo} por grupo: a distribuição inteira")
-            mediana = df.groupby("grupo")[coluna].median()
-            _leitura(
-                f"Metade dos contratos de Norte e Nordeste fica abaixo de **{br(mediana['N+NE'], casas)} {unidade}**, "
-                f"contra **{br(mediana['Demais'], casas)} {unidade}** nas demais regiões (a mediana, o traço branco "
-                "na caixa). O histograma mostra onde os contratos se concentram; a caixa vai do 1º ao 3º quartil."
-            )
-            dom = g.dominio(pop, coluna)
-            max_y = g.max_proporcao_histograma([pop, amostra], coluna, dom)
-            esquerda, direita = st.columns(2, gap="medium")
-            with esquerda:
-                grafico(g.histograma(df, coluna, dom, f"{titulo}: histograma", max_y=max_y,
-                                     legenda=(f"{base}. {nota}",), largura=380))
-            with direita:
-                grafico(g.boxplot(df, coluna, dom, f"{titulo}: boxplot",
-                                  legenda=(f"{base}. Pontos: contratos fora dos bigodes.",)))
-            numeros(tabela_descritiva(pop, comparar, coluna))
+            with bloco(f"{titulo} por grupo: a distribuição inteira"):
+                mediana = df.groupby("grupo")[coluna].median()
+                _leitura(
+                    f"Metade dos contratos de Norte e Nordeste fica abaixo de **{br(mediana['N+NE'], casas)} {unidade}**, "
+                    f"contra **{br(mediana['Demais'], casas)} {unidade}** nas demais regiões (a mediana, o traço branco "
+                    "na caixa). O histograma mostra onde os contratos se concentram; a caixa vai do 1º ao 3º quartil."
+                )
+                dom = g.dominio(pop, coluna)
+                max_y = g.max_proporcao_histograma([pop, amostra], coluna, dom)
+                esquerda, direita = st.columns(2, gap="medium")
+                with esquerda:
+                    grafico(g.histograma(df, coluna, dom, f"{titulo}: histograma", max_y=max_y,
+                                         legenda=(f"{base}. {nota}",), largura=340))
+                with direita:
+                    grafico(g.boxplot(df, coluna, dom, f"{titulo}: boxplot",
+                                      legenda=(f"{base}. Pontos: contratos fora dos bigodes.",)))
+                numeros(tabela_descritiva(pop, comparar, coluna))
 
-        st.subheader("Setor dos contratos em cada grupo")
-        infra = df.groupby("grupo")["setor"].apply(lambda s: (s == "Infraestrutura").mean())
-        _leitura(
-            f"Infraestrutura é **{pct(infra['N+NE'], 0)} dos contratos de Norte e Nordeste** e "
-            f"{pct(infra['Demais'], 0)} nas demais regiões. Obras de infraestrutura têm prazos longos por natureza, "
-            "então parte da diferença de prazo pode vir do setor, não da região (limitação 4 do Painel 3)."
-        )
-        grafico(g.barras_setor(df, "Setor dentro de cada grupo", legenda=(f"{base}. Cada grupo soma 100%.",)))
-        numeros(tabela_qualitativa_por_grupo(pop, comparar, "setor", "Setor"),
-                tabela_qualitativa_por_grupo(pop, comparar, "porte", "Porte"),
-                rotulo="Ver os números (setor e porte do cliente)")
+        with bloco("Setor dos contratos em cada grupo"):
+            infra = df.groupby("grupo")["setor"].apply(lambda s: (s == "Infraestrutura").mean())
+            _leitura(
+                f"Infraestrutura é **{pct(infra['N+NE'], 0)} dos contratos de Norte e Nordeste** e "
+                f"{pct(infra['Demais'], 0)} nas demais regiões. Obras de infraestrutura têm prazos longos por natureza, "
+                "então parte da diferença de prazo pode vir do setor, não da região (limitação 4 do Painel 3)."
+            )
+            grafico(g.barras_setor(df, "Setor dentro de cada grupo", legenda=(f"{base}. Cada grupo soma 100%.",)))
+            numeros(tabela_qualitativa_por_grupo(pop, comparar, "setor", "Setor"),
+                    tabela_qualitativa_por_grupo(pop, comparar, "porte", "Porte"),
+                    rotulo="Ver os números (setor e porte do cliente)")
 
     # ---------------------------------------------------------------- Qualidade
     with aba_qualidade:
-        q = _contar_qualidade(df)
-        sem = q["Sem spread em reais (fora de H3 e H4)"]
-        _leitura(
-            f"**{inteiro(sem)} contratos ({pct(sem / q['Contratos'])}) não têm subcrédito indexado em reais** e ficam "
-            "fora do spread (H3, H4 e a descritiva do spread), mas continuam em H1, H2 e H5. Spreads e prazos iguais "
-            "a 0, que parecem erro de registro, foram mantidos (limitação 5 do Painel 3)."
-        )
-        cartoes([
-            {"rotulo": "Contratos", "valor": inteiro(q["Contratos"])},
-            {"rotulo": "Sem spread em reais", "valor": inteiro(sem), "ajuda": "Ficam fora de H3 e H4."},
-            {"rotulo": "Spread = 0", "valor": inteiro(q["Spread = 0"]), "ajuda": "Mantidos (limitação 5)."},
-            {"rotulo": "Prazo de amortização = 0", "valor": inteiro(q["Prazo de amortização = 0"]),
-             "ajuda": "Mantidos (limitação 5)."},
-        ])
-        numeros(tabela_qualidade(pop, comparar), rotulo="Ver os números por grupo")
+        with bloco():
+            q = _contar_qualidade(df)
+            sem = q["Sem spread em reais (fora de H3 e H4)"]
+            _leitura(
+                f"**{inteiro(sem)} contratos ({pct(sem / q['Contratos'])}) não têm subcrédito indexado em reais** e ficam "
+                "fora do spread (H3, H4 e a descritiva do spread), mas continuam em H1, H2 e H5. Spreads e prazos iguais "
+                "a 0, que parecem erro de registro, foram mantidos (limitação 5 do Painel 3)."
+            )
+            cartoes([
+                {"rotulo": "Contratos", "valor": inteiro(q["Contratos"])},
+                {"rotulo": "Sem spread em reais", "valor": inteiro(sem), "ajuda": "Ficam fora de H3 e H4."},
+                {"rotulo": "Spread = 0", "valor": inteiro(q["Spread = 0"]), "ajuda": "Mantidos (limitação 5)."},
+                {"rotulo": "Prazo de amortização = 0", "valor": inteiro(q["Prazo de amortização = 0"]),
+                 "ajuda": "Mantidos (limitação 5)."},
+            ])
+            numeros(tabela_qualidade(pop, comparar), rotulo="Ver os números por grupo")

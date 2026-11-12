@@ -32,6 +32,8 @@ from tela import (  # noqa: E402
     tabela,
     tabela_estatica,
     voltar_para_base,
+    cabecalho,
+    rodape,
 )
 
 ALFA = 0.05  # fixado antes do sorteio
@@ -120,6 +122,7 @@ for h in c.HIPOTESES:
 
 
 # --- Cabeçalho -------------------------------------------------------------------------
+cabecalho()
 voltar_para_base()
 st.title("Painel 3 — Inferência")
 pergunta("O que a amostra permite afirmar sobre as cinco hipóteses, e a inferência acertou?")
@@ -392,7 +395,7 @@ def aba_comparacao() -> None:
     for hid, h in HIP.items():
         res, var = R[hid], h["variavel"]
         r = res["teste"]
-        alternativo = "-"
+        alternativo = "não se aplica"
         if var == "grupo":
             w = r["ic_wilson"]
             alternativo = f"Wilson {faixa(w, lambda v: formatar(var, v))}, contém: {'sim' if w[0] <= res['verdadeiro'] <= w[1] else 'não'}"
@@ -589,3 +592,5 @@ conteudo |= {"comparacao": aba_comparacao, "variabilidade": aba_variabilidade, "
 for aba, chave in zip(abas(ROTULOS_ABAS), ROTULOS_ABAS):
     with aba:
         conteudo[chave]()
+
+rodape()

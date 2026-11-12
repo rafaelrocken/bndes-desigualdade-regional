@@ -17,10 +17,13 @@ from tela import (  # noqa: E402
     pergunta,
     seletor_nivel,
     voltar_para_base,
+    cabecalho,
+    rodape,
 )
 
 pop, amostra, meta = carregar()
 
+cabecalho()
 voltar_para_base()
 st.title("Painel 1 — População")
 pergunta(f"Onde estão os {inteiro(len(pop))} contratos do BNDES, e em que condições?")
@@ -31,3 +34,5 @@ st.markdown(
 cartoes_descritivos(pop, amostra, "populacao")
 nivel = seletor_nivel("populacao")
 painel_descritivo(pop, amostra, "populacao", carregar_ibge(), carregar_malhas(), nivel)
+
+rodape()
