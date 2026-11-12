@@ -1,0 +1,13 @@
+# Tema fixo: a aparência não depende do computador de quem abre.
+[theme]
+base = "light"
+primaryColor = "#0072B2"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f3f5f8"
+textColor = "#0f2238"
+
+[client]
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false
