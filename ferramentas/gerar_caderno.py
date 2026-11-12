@@ -64,7 +64,7 @@ Estes termos voltam o caderno inteiro. Volte aqui sempre que um deles embaralhar
 | **Amostra** | os 913 contratos sorteados |
 | **Parâmetro** | o número verdadeiro da população (π, δ). Em geral desconhecido; aqui, como temos a população inteira, dá para calculá-lo e conferir |
 | **Estimativa** | o número calculado na amostra para estimar o parâmetro |
-| **H0 e hipótese alternativa** | H0 é o valor de referência ("nada de diferente"); a alternativa é o que a amostra teria de mostrar para duvidarmos de H0 |
+| **H0 e hipótese alternativa** | duas afirmações sobre o **parâmetro** da população, nunca sobre a amostra. H0 é o valor de referência ("nada de diferente"); a alternativa é o que passamos a considerar verdadeiro sobre o parâmetro se a amostra for incompatível com H0 |
 | **α (nível de significância)** | o risco de rejeitar uma H0 verdadeira que aceitamos de antemão: 0,05 |
 | **Estatística de teste** | quão longe a amostra está de H0, medido em erros padrão |
 | **Valor-p** | se H0 fosse verdadeira, a probabilidade de uma amostra dar uma estatística tão ou mais extrema que a nossa. Não é a probabilidade de H0 ser verdadeira |
@@ -300,7 +300,7 @@ display(pd.DataFrame(cenarios))
 ''')
 
 md(r"""
-**Como ler.** O n final é **913 contratos**. A segunda tabela mostra a lógica da fórmula: margem menor exige amostra maior; um π mais distante de 0,5 exige amostra menor (por isso 0,5 é o "pior caso"). A calculadora de tamanho amostral sugerida no enunciado (USP/Bauru) usa esta mesma fórmula, então vale conferir o 913 nela antes de gravar o vídeo.
+**Como ler.** O n final é **913 contratos**. A segunda tabela mostra a lógica da fórmula: margem menor exige amostra maior; um π mais distante de 0,5 exige amostra menor (por isso 0,5 é o "pior caso"). A fórmula é a que o enunciado apresenta, e a conta acima a segue passo a passo.
 """)
 
 # =====================================================================================
@@ -448,7 +448,7 @@ md(r"""
 
 | Teste | Hipótese nula | Hipótese alternativa | Régua |
 |---|---|---|---|
-| **H1** | $\pi = 0{,}196$ | $\pi \neq 0{,}196$ (bilateral) | **PIB**: N+NE geram 19,6% do PIB (IBGE, Contas Regionais 2023: NE 13,8% + N 5,8%). Pergunta: N+NE recebem pelo menos a sua parte na economia? |
+| **H1** | $\pi = 0{,}196$ | $\pi \neq 0{,}196$ (bilateral) | **PIB**: N+NE geram 19,6% do PIB (IBGE, Contas Regionais 2023: NE 13,8% + N 5,8%). Pergunta: N+NE recebem a sua parte na economia? |
 | **H2** | $\pi = 0{,}354$ | $\pi \neq 0{,}354$ (bilateral) | **População**: N+NE têm 35,4% dos habitantes (IBGE, Censo 2022: NE 26,9% + N 8,5%). Pergunta: recebem a sua parte nas pessoas? |
 
 "Bilateral" quer dizer que olhamos as duas caudas: duvidamos de H0 tanto se a amostra der um π bem **maior** quanto bem **menor** que o da régua.
@@ -524,7 +524,7 @@ Se $\delta < 0$ no spread, N+NE pagam em média menos que os Demais, que é a pr
 | **H4** | $\delta \ge 0$ (spread) | $\delta < 0$ (unilateral à esquerda) | Mesma régua, mas com a direção da promessa: N+NE pagam **menos**. Olha só a cauda esquerda |
 | **H5** (extra) | $\delta = 0$ (prazo) | $\delta \neq 0$ (bilateral) | A outra metade da pergunta: N+NE também têm mais prazo? |
 
-H3 e H4 testam o **mesmo** δ. A diferença é que o H4 já diz para que lado esperamos o efeito, e por isso concentra todo o α em uma cauda só.
+H3 e H4 testam o **mesmo** δ. A diferença é que o H4 já diz para que lado esperamos o efeito, e por isso concentra todo o α em uma cauda só. Isso muda também o intervalo que combina com o teste, como veremos logo após o resultado.
 
 **Por que o teste t de Welch.** Compara as médias de dois grupos independentes **sem supor que têm a mesma variância** (os dois grupos têm dispersões e tamanhos bem diferentes). A estatística é a diferença observada dividida pelo erro padrão da diferença:
 
@@ -622,12 +622,19 @@ ALT_TEXTO = {"bilateral": "δ ≠ 0", "menor": "δ < 0"}
 
 res_media = {}
 linhas_media = {}
+limites_unilaterais = {}   # H4: limite superior do IC unilateral de 95% (o "gêmeo" do teste à esquerda)
 for h in c.HIPOTESES[2:]:
     var = h["variavel"]
     a, b = grupos[var]["N+NE"], grupos[var]["Demais"]
     r = c.teste_welch(a, b, h["alternativa"], ALFA)
     res_media[h["id"]] = r
     casas = 3 if var == "spread" else 2
+    if h["alternativa"] == "menor":
+        # IC unilateral de 95% que combina com o teste à esquerda a 5%: (−∞; δ̂ + t(0,95; gl) · ep]
+        ep = float(np.sqrt(a.var(ddof=1) / len(a) + b.var(ddof=1) / len(b)))
+        assert np.isclose(ep, r["diferenca"] / r["t"])  # o mesmo erro padrão do teste
+        limites_unilaterais[h["id"]] = r["diferenca"] + float(stats.t.ppf(1 - ALFA, r["gl"])) * ep
+    limite = limites_unilaterais.get(h["id"])
     linhas_media[h["id"]] = {
         "Variável": VARIAVEIS[var],
         "Hipótese alternativa": ALT_TEXTO[h["alternativa"]] + (" (unilateral)" if h["alternativa"] == "menor" else " (bilateral)"),
@@ -638,11 +645,15 @@ for h in c.HIPOTESES[2:]:
         "Estatística t": br(r["t"], 3),
         "Graus de liberdade (Welch)": br(r["gl"], 1),
         "Valor-p": fp(r["p_valor"]),
-        "IC 95% da diferença": faixa(r["ic_diferenca"], lambda v: br(v, casas)),
+        "IC 95% bilateral da diferença (estimar δ)": faixa(r["ic_diferenca"], lambda v: br(v, casas)),
+        "IC unilateral de 95% (limite superior)": "-" if limite is None else f"(−∞; {br(limite, casas)}]",
         "d de Cohen": br(r["d_cohen"], 3),
         "Decisão (α = 0,05)": decisao_texto(r["p_valor"]),
     }
 display(pd.DataFrame(linhas_media))
+for hid, limite in limites_unilaterais.items():
+    print(f"{hid}: limite superior do IC unilateral de 95% = {br(limite, 3)} p.p. "
+          f"Contém 0? {'sim' if limite >= 0 else 'não'}. (O teste rejeita H0 se esse limite ficar abaixo de 0.)")
 ''')
 
 md(r"""
@@ -650,6 +661,7 @@ md(r"""
 
 - **H3 (spread, bilateral).** Na amostra, N+NE e Demais têm spread médio quase igual (2,703 contra 2,708): diferença de −0,005 ponto percentual, t = −0,04, valor-p = 0,97. **Não rejeita H0.** O intervalo da diferença, de −0,25 a +0,24, passa por zero e é largo: a amostra não consegue distinguir uma diferença pequena de nenhuma diferença. O d de Cohen é praticamente zero.
 - **H4 (spread, unilateral à esquerda).** É o mesmo t (−0,04), mas o valor-p olha só a cauda esquerda: 0,48. **Não rejeita H0.** O valor-p de H4 é metade do de H3 porque o t é negativo, isto é, a amostra caiu do lado que H4 olha; se o t fosse positivo, o valor-p de H4 passaria de 0,5. A promessa "N+NE pagam menos" não aparece na amostra.
+- **O intervalo de H4.** O IC da tabela (de −0,249 a 0,239) é o **bilateral** de 95%: o intervalo para **estimar** δ, igual ao de H3. O intervalo que combina com o teste unilateral à esquerda a 5% é outro, um limite superior $(-\infty;\,U]$ com $U = \hat\delta + t_{0{,}95;\,gl} \cdot ep$, calculado na tabela e na linha impressa abaixo dela: U = 0,199 ponto percentual. Rejeitar H0 ($\delta \ge 0$) equivale a U ficar abaixo de zero. Como U é positivo, o intervalo contém o 0 e o teste **não rejeita**, coerente com o valor-p de 0,48.
 - **H5 (prazo, bilateral).** N+NE têm prazo médio de 119,6 meses contra 84,6 dos Demais: diferença de 35,0 meses, t = 5,71, gl ≈ 216, valor-p da ordem de 10⁻⁸. **Rejeita H0.** O intervalo vai de 22,9 a 47,1 meses, longe de zero. O d de Cohen é 0,62, efeito de tamanho médio.
 - **Condições.** O n passa de 30 em todos os grupos; os QQ-plots mostram caudas pesadas, discutidas acima.
 """)
@@ -686,10 +698,13 @@ for var in VARIAVEIS:
     da = c.descritiva(pop.loc[pop["grupo"] == "N+NE", var])
     db = c.descritiva(pop.loc[pop["grupo"] == "Demais", var])
     pop_g[var] = {"a": da, "b": db, "delta": float(da["media"] - db["media"])}
+    dp_comb = np.sqrt(((da["n"] - 1) * da["desvio_padrao"] ** 2 + (db["n"] - 1) * db["desvio_padrao"] ** 2) / (da["n"] + db["n"] - 2))
+    pop_g[var]["d"] = pop_g[var]["delta"] / float(dp_comb)  # d de Cohen verdadeiro (desvio padrão combinado)
 
 print(f"π na população (proporção de contratos em N+NE): {pct(pi_pop, 2)}")
 print(f"δ do spread na população (N+NE − Demais): {br(pop_g['spread']['delta'], 4)} p.p.")
 print(f"δ do prazo na população (N+NE − Demais): {br(pop_g['prazo_amortizacao']['delta'], 2)} meses")
+print(f"d de Cohen na população: spread {br(pop_g['spread']['d'], 3)}, prazo {br(pop_g['prazo_amortizacao']['d'], 3)}")
 ''')
 
 cod(r'''
@@ -713,7 +728,7 @@ for h in c.HIPOTESES:
         poder = c.poder_z_proporcao(pi_pop, v0, n, ALFA)
         parametro = "π (proporção de contratos em N+NE)"
         valor_h0 = f"π = {pct(v0, 1)}"
-        extra = faixa(r["ic_wilson"], f) + ", contém: " + ("sim" if r["ic_wilson"][0] <= pi_pop <= r["ic_wilson"][1] else "não")
+        extra = "Wilson " + faixa(r["ic_wilson"], f) + ", contém: " + ("sim" if r["ic_wilson"][0] <= pi_pop <= r["ic_wilson"][1] else "não")
     else:
         r = res_media[hid]
         estimativa, ic, estatistica, gl = r["diferenca"], r["ic_diferenca"], r["t"], br(r["gl"], 1)
@@ -725,6 +740,10 @@ for h in c.HIPOTESES:
         parametro = "δ (N+NE − Demais) do " + ("spread" if var == "spread" else "prazo")
         valor_h0 = "δ = 0" if alt == "bilateral" else "δ ≥ 0"
         extra = "-"
+        if hid in limites_unilaterais:
+            lim = limites_unilaterais[hid]
+            extra = (f"unilateral (−∞; {f(lim)}], contém o verdadeiro: {'sim' if verdadeiro <= lim else 'não'}, "
+                     f"contém 0: {'sim' if lim >= 0 else 'não'}")
     contem = ic[0] <= verdadeiro <= ic[1]
     h0_verdadeira = (verdadeiro == v0) if alt == "bilateral" else (verdadeiro >= v0)
     julgamento = c.julgar_decisao(r["rejeita"], verdadeiro, v0, alt)
@@ -739,9 +758,9 @@ for h in c.HIPOTESES:
         "Valor verdadeiro (população)": f(verdadeiro),
         "Estimativa (amostra)": f(estimativa),
         "Erro amostral (estimativa − verdadeiro)": FORMATO_DIF[var](estimativa - verdadeiro),
-        "IC 95%": faixa(ic, f),
+        "IC 95% bilateral": faixa(ic, f),
         "O IC contém o valor verdadeiro?": "sim" if contem else "não",
-        "IC de Wilson (conferência)": extra,
+        "IC alternativo (conferência)": extra,
         "Estatística (z ou t)": br(estatistica, 3),
         "Graus de liberdade (Welch)": gl,
         "Valor-p": fp(r["p_valor"]),
@@ -783,7 +802,7 @@ display(pd.DataFrame(linhas).set_index(["variável", "grupo"]))
 md(r"""
 ### Variabilidade amostral: e se o sorteio fosse outro?
 
-Os dois "contém: sim" acima são bons, mas é **uma** amostra. Para ver o que a variabilidade amostral faz, a célula abaixo repete o sorteio **1.000 vezes** com sementes de 1 a 1.000 (nenhuma delas é a semente do trabalho) e refaz os cinco testes em cada amostra. Isto é um exercício de estudo: **nenhum número dos testes oficiais vem daqui**.
+Os "contém: sim" acima são bons, mas vêm de **uma** amostra. Para ver o que a variabilidade amostral faz, a célula abaixo repete o sorteio **1.000 vezes** com sementes de 1 a 1.000 (nenhuma delas é a semente do trabalho) e refaz os cinco testes em cada amostra. Isto é um exercício de estudo: **nenhum número dos testes oficiais vem daqui**.
 
 Duas coisas para olhar: (1) a fração das amostras em que o teste rejeita H0 deve ficar perto do **poder** calculado pela fórmula; (2) a fração dos intervalos que contêm o valor verdadeiro deve ficar perto de 95% (um pouco acima, como explicamos adiante). É isso que "95% de confiança" significa: uma propriedade do **método**, ao longo de muitas amostras, e não uma chance sobre o intervalo de uma amostra só.
 """)
@@ -849,9 +868,9 @@ md(r"""
 
 **H2 (régua da população).** O teste rejeitou H0 (z = −9,91) e **acertou**: o π verdadeiro (19,05%) está muito longe de 35,4%, e o poder era de praticamente 100%. Pela régua das pessoas, N+NE recebem bem menos que a sua parte em número de contratos. Ressalva da limitação 1: em valor, N+NE ficam com 29%, e a régua populacional é normativa, não uma obrigação do banco.
 
-**H3 (spread, bilateral).** Não rejeitou H0 (p = 0,97), mas H0 é falsa por pouco: na população, N+NE pagam em média 0,069 ponto percentual a menos de spread. É **erro tipo II**: a diferença é minúscula perto do desvio padrão do spread (cerca de 1,4 ponto percentual) e o poder era de apenas 9,2%. O IC da diferença, [−0,249; 0,239], contém o valor verdadeiro (−0,069).
+**H3 (spread, bilateral).** Não rejeitou H0 (p = 0,97). Na população, N+NE pagam em média 0,069 ponto percentual a menos de spread, então H0 é falsa e a decisão é um **erro tipo II inofensivo**, como em H1: a diferença existe, mas é desprezível na prática (d de Cohen da população de cerca de −0,05, isto é, 5% de um desvio padrão de uns 1,4 ponto percentual) e o poder era de apenas 9,2%. O IC da diferença, [−0,249; 0,239], contém o valor verdadeiro (−0,069).
 
-**H4 (spread, unilateral).** Não rejeitou H0 (p = 0,48). A diferença verdadeira tem o sinal que H4 esperava (N+NE pagam menos), então H0 (δ ≥ 0) é falsa e a decisão é **erro tipo II**, por falta de poder: 14,7%, maior que o de H3 porque o teste unilateral junta todo o α na cauda que importa, mas ainda baixo. Na prática, o spread de N+NE é quase igual ao dos Demais.
+**H4 (spread, unilateral).** Não rejeitou H0 (p = 0,48). A diferença verdadeira tem o sinal que H4 esperava (N+NE pagam menos), então H0 (δ ≥ 0) é falsa e a decisão é **erro tipo II**, inofensivo pelo mesmo motivo de H3, com poder de 14,7%: maior que o de H3 porque o teste unilateral junta todo o α na cauda que importa, mas ainda baixo. O IC bilateral [−0,249; 0,239] contém o δ verdadeiro; o intervalo unilateral que combina com o teste, (−∞; 0,199], também o contém (−0,069) e contém o 0, o que é coerente com não rejeitar H0.
 
 **H5 (prazo, bilateral).** Rejeitou H0 e **acertou**: a diferença verdadeira de prazo é de 28,4 meses (114,9 contra 86,6) e o poder era de 99,7%. A estimativa (35,0 meses) ficou 6,6 meses acima da verdadeira, e o IC [22,9; 47,1] contém o valor verdadeiro. Cuidado: parte da diferença pode vir de N+NE terem mais contratos de infraestrutura (limitação 4).
 
@@ -863,7 +882,7 @@ A lição para o vídeo: **não rejeitar H0 não quer dizer que a diferença é 
 
 ### E os intervalos?
 
-Os cinco intervalos **contêm** o valor verdadeiro, e os das médias de cada grupo também (tabela acima). Isso não é garantido: ao longo dos 1.000 sorteios, os intervalos cobriram o valor verdadeiro em 96% a 97% das amostras, um pouco acima de 95% porque os erros padrão ignoram a correção de população finita (limitação 8). Em 3% a 4% das amostras o intervalo erraria, e sem a população à mão não saberíamos se o nosso é um desses casos. É isso que "95% de confiança" quer dizer: uma propriedade do método, e não uma chance associada ao intervalo que calculamos.
+Os três intervalos (o de π, que serve a H1 e H2; o de δ do spread, que serve a H3 e H4; e o de δ do prazo, de H5) **contêm** o valor verdadeiro, assim como o limite unilateral de H4 e os intervalos das médias de cada grupo (tabelas acima). Isso não é garantido: ao longo dos 1.000 sorteios, os intervalos cobriram o valor verdadeiro em 96% a 97% das amostras, um pouco acima de 95% porque os erros padrão ignoram a correção de população finita (limitação 8). Em 3% a 4% das amostras o intervalo erraria, e sem a população à mão não saberíamos se o nosso é um desses casos. É isso que "95% de confiança" quer dizer: uma propriedade do método, e não uma chance associada ao intervalo que calculamos.
 """)
 
 # =====================================================================================
