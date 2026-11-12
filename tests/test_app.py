@@ -3,6 +3,7 @@
 Cada página roda sozinha (o AppTest executa o arquivo da página como um script) e
 o app inteiro roda pelo `app.py`, inclusive a partir de outra pasta.
 """
+import re
 from pathlib import Path
 
 import pytest
@@ -68,8 +69,10 @@ def test_inferencia_sem_frases_proibidas():
     texto = _textos(_rodar("paginas/inferencia.py")).lower()
     assert "aceita" not in texto
     assert "95% de chance" not in texto and "95 % de chance" not in texto
-    # as decisões calculadas ao vivo aparecem em português
-    assert "não rejeita h0" in texto and "rejeita h0" in texto
+    # as decisões calculadas ao vivo aparecem em português, as duas: "rejeita h0" só vale quando não vem
+    # depois de "não" (a busca simples casaria o primeiro caso por dentro do segundo)
+    assert re.search(r"\bnão rejeita h0\b", texto)
+    assert re.search(r"(?<!não )\brejeita h0\b", texto)
 
 
 def test_inferencia_tem_as_oito_limitacoes():
@@ -166,7 +169,6 @@ def test_painel_2_tem_coluna_populacao():
 # ---------------------------------------------------------------- Task 7b: redesenho
 
 import json  # noqa: E402
-import re  # noqa: E402
 
 import pyarrow as pa  # noqa: E402
 
