@@ -127,10 +127,20 @@ def test_barras_setor_participacao_soma_um_por_grupo(pop_pequena):
     assert d["encoding"]["x"]["axis"]["format"] == ".0%"
 
 
-def test_barras_setor_ordem_pela_participacao_geral_e_cores_fixas(pop_pequena):
+def test_barras_setor_ordem_pela_participacao_geral():
+    # B 13, D 6, C 5, A 2 nos dois grupos; a primeira aparição é A, C, D, B, ao contrário
+    # da participação, então só a ordenação pela participação geral chega a B, D, C, A
+    setores = ["A"] * 2 + ["C"] * 5 + ["D"] * 6 + ["B"] * 13
+    assimetrico = pd.DataFrame(
+        {"setor": setores, "grupo": ["N+NE" if i % 2 == 0 else "Demais" for i in range(len(setores))]}
+    )
+    assert list(assimetrico["setor"].unique()) == ["A", "C", "D", "B"]
+    d = barras_setor(assimetrico, "t").to_dict()
+    assert d["encoding"]["y"]["sort"] == ["B", "D", "C", "A"]
+
+
+def test_barras_setor_cores_fixas_e_barras_agrupadas_por_grupo(pop_pequena):
     d = barras_setor(pop_pequena, "t").to_dict()
-    esperado = list(pop_pequena["setor"].value_counts().sort_values(ascending=False, kind="stable").index)
-    assert d["encoding"]["y"]["sort"] == esperado
     assert d["encoding"]["color"]["scale"] == {
         "domain": ["N+NE", "Demais"],
         "range": [CORES["N+NE"], CORES["Demais"]],
@@ -361,6 +371,11 @@ def test_intervalos_legenda_explica_ponto_e_losango():
     assert any(c["scale"].get("range") == ["circle", "diamond"] for c in formas)
 
 
+def test_intervalos_sem_resultados_levanta_erro_claro():
+    with pytest.raises(ValueError, match="resultados"):
+        intervalos([], "t")
+
+
 def test_intervalos_um_item_so():
     d = intervalos(_resultados()[:1], "t").to_dict()
     assert len(_tabelas(d)[0]) == 1
@@ -423,15 +438,39 @@ def test_todos_os_construtores_tem_titulo_e_fonte(pop_pequena):
         assert FONTE in ([subtitulo] if isinstance(subtitulo, str) else subtitulo), nome
 
 
+def _legendas(spec: dict) -> list[dict]:
+    """Canais de cor, forma ou preenchimento que mantêm a legenda.
+
+    Só esses canais geram legenda; `row`/`column`/`facet` também carregam o campo
+    `grupo` mas não têm legenda, e não valem. `legend: null` desliga a legenda.
+    """
+    achados = []
+    if "encoding" in spec:
+        achados += [
+            c
+            for nome, c in spec["encoding"].items()
+            if nome in {"color", "shape", "fill"} and isinstance(c, dict) and c.get("legend", {}) is not None
+        ]
+    for chave in ("layer", "hconcat", "vconcat", "concat"):
+        for sub in spec.get(chave, []):
+            achados += _legendas(sub)
+    if isinstance(spec.get("spec"), dict):
+        achados += _legendas(spec["spec"])
+    return achados
+
+
 def test_todos_os_construtores_tem_legenda(pop_pequena):
     for nome, grafico in _todos(pop_pequena).items():
-        d = grafico.to_dict()
-        legendas = [
-            c
-            for c in _encodings(d)
-            if c.get("field") in {"grupo", "serie", "tipo"} and c.get("legend", {}) is not None
-        ]
-        assert legendas, nome
+        assert _legendas(grafico.to_dict()), nome
+
+
+def test_legendas_ignora_o_facet_e_a_legenda_desligada():
+    facet_sem_cor = {"facet": {"row": {"field": "grupo"}}, "spec": {"encoding": {"row": {"field": "grupo"}}}}
+    assert _legendas(facet_sem_cor) == []
+    desligada = {"encoding": {"color": {"field": "grupo", "legend": None}}}
+    assert _legendas(desligada) == []
+    ligada = {"layer": [{"encoding": {"shape": {"field": "tipo", "legend": {"title": "x"}}}}]}
+    assert len(_legendas(ligada)) == 1
 
 
 def test_populacao_grande_nao_estoura_o_limite_de_linhas_do_altair(pop_pequena):

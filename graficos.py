@@ -448,6 +448,8 @@ def intervalos(resultados: list[dict], titulo: str) -> alt.FacetChart:
     própria (as unidades diferem): a linha vai de `li` a `ls`, o ponto marca a
     estimativa da amostra e o losango marca o valor verdadeiro da população.
     """
+    if not resultados:
+        raise ValueError("resultados está vazio: passe ao menos um item para desenhar")
     dados = pd.DataFrame(resultados)[["id", "unidade", "estimativa", "li", "ls", "verdadeiro"]]
     dados["rotulo"] = dados["id"] + " (" + dados["unidade"] + ")"
 
