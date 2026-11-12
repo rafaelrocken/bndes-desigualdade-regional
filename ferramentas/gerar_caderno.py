@@ -252,7 +252,7 @@ md(r"""
 
 *Item 3 do enunciado: calcular o tamanho necessário da amostra e justificar os parâmetros.*
 
-A fórmula do enunciado, com correção para população finita:
+A fórmula usual de tamanho de amostra para proporção, com correção para população finita:
 
 $$ n_0 = \frac{z^2\,\pi\,(1-\pi)}{E^2} \qquad\text{e}\qquad n = \frac{n_0}{1 + n_0/N} $$
 
@@ -300,7 +300,7 @@ display(pd.DataFrame(cenarios))
 ''')
 
 md(r"""
-**Como ler.** O n final é **913 contratos**. A segunda tabela mostra a lógica da fórmula: margem menor exige amostra maior; um π mais distante de 0,5 exige amostra menor (por isso 0,5 é o "pior caso"). A fórmula é a que o enunciado apresenta, e a conta acima a segue passo a passo.
+**Como ler.** O n final é **913 contratos**. A segunda tabela mostra a lógica da fórmula: margem menor exige amostra maior; um π mais distante de 0,5 exige amostra menor (por isso 0,5 é o "pior caso"). A fórmula é a usual de tamanho de amostra para proporção, com correção para população finita, e a conta acima a segue passo a passo.
 """)
 
 # =====================================================================================

@@ -171,7 +171,7 @@ def _sem_nan(x) -> np.ndarray:
 
 
 def tamanho_amostra(N: int, E: float = 0.03, confianca: float = 0.95, pi: float = 0.5) -> dict:
-    """Tamanho da amostra pela fórmula do enunciado, com correção para população finita.
+    """Tamanho da amostra pela fórmula usual para proporção, com correção para população finita.
 
     n0 = z² π (1 − π) / E²  e  n = n0 / (1 + n0 / N), arredondado para cima.
     Devolve `z`, `n0` (sem arredondar) e `n` (inteiro).
