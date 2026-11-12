@@ -8,7 +8,6 @@ cada medida. Toda escala que depende dos dados (o fim dos eixos, o eixo vertical
 histogramas) é calculada aqui com a população e a amostra juntas, e o mapa usa
 limiares fixos; por isso a mesma escala sai nos dois painéis por construção.
 """
-import json
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +17,7 @@ from streamlit.errors import StreamlitAPIException
 
 import calculo as c
 import graficos as g
+from dados_app import carregar
 
 GRUPOS = ["N+NE", "Demais"]
 REGIOES = ["N", "NE", "CO", "SE", "S"]
@@ -45,11 +45,15 @@ ASSETS = Path(__file__).resolve().parent / "assets"  # logos; origem de cada um 
 
 # Caminhos das páginas, relativos ao app.py (para `st.page_link`).
 PAGINA_BASE = "paginas/base.py"
-PAGINAS_PAINEIS = [
-    ("paginas/populacao.py", "Painel 1 — População: os 6.320 contratos", ":material/public:"),
-    ("paginas/amostra.py", "Painel 2 — Amostra: os 913 contratos sorteados", ":material/casino:"),
-    ("paginas/inferencia.py", "Painel 3 — Inferência: os cinco testes e a comparação", ":material/functions:"),
-]
+def paginas_paineis() -> list[tuple[str, str, str]]:
+    """(caminho, rótulo, ícone) dos três painéis; N e n saem dos dados."""
+    pop, amostra, _ = carregar()
+    return [
+        ("paginas/populacao.py", f"Painel 1 — População: os {inteiro(len(pop))} contratos", ":material/public:"),
+        ("paginas/amostra.py", f"Painel 2 — Amostra: os {inteiro(len(amostra))} contratos sorteados",
+         ":material/casino:"),
+        ("paginas/inferencia.py", "Painel 3 — Inferência: os cinco testes e a comparação", ":material/functions:"),
+    ]
 
 
 # --- Formatação brasileira -----------------------------------------------------------
@@ -87,6 +91,25 @@ def fp(p: float) -> str:
 def faixa(ic, formatar) -> str:
     """Intervalo escrito como [inferior; superior]."""
     return f"[{formatar(ic[0])}; {formatar(ic[1])}]"
+
+
+def nota_regua_populacao(ibge: pd.DataFrame, x: int, n: int, alfa: float = 0.05) -> str:
+    """A nota que acompanha a régua de H2 (35,4%): a soma exata no IBGE arredonda para outro
+    número, porque o pré-registro somou as partes já arredondadas. Tudo calculado: as partes,
+    a soma exata e o z do teste com cada régua, para dizer se a decisão muda."""
+    partes = ibge.groupby("regiao")["populacao_2022"].sum() / ibge["populacao_2022"].sum()
+    exata = float(partes["N"] + partes["NE"])
+    p0 = c.HIPOTESES[1]["p0_ou_delta0"]
+    z_pre = c.teste_z_proporcao(x, n, p0, alfa)
+    z_exata = c.teste_z_proporcao(x, n, exata, alfa)
+    mesma = z_pre["rejeita"] == z_exata["rejeita"]
+    return (
+        f"Nota sobre a régua da população: a soma exata no IBGE é {pct(exata, 2)}, que arredonda para "
+        f"{pct(exata, 1)}. O pré-registro fixou {pct(p0, 1)}, a soma das partes já arredondadas "
+        f"(NE {pct(round(float(partes['NE']), 3))} + N {pct(round(float(partes['N']), 3))}). "
+        f"Com a régua do pré-registro, z = {br(z_pre['z'], 2)}; com a soma exata, z = {br(z_exata['z'], 2)}: "
+        + ("a decisão não muda." if mesma else "a decisão muda.")
+    )
 
 
 def extenso(texto: str) -> str:
@@ -211,7 +234,7 @@ def cabecalho() -> None:
 def rodape() -> None:
     """Rodapé de fontes: os logos do BNDES e do IBGE, pequenos, cada um com o link da base
     usada, e o aviso de que o trabalho é independente."""
-    meta = json.loads((Path(__file__).resolve().parent / "dados" / "metadados.json").read_text(encoding="utf-8"))
+    meta = carregar()[2]
     st.divider()
     st.markdown("**Fontes dos dados**")
     bndes, ibge = st.columns(2, gap="large")
@@ -500,7 +523,7 @@ def painel_descritivo(pop: pd.DataFrame, amostra: pd.DataFrame, qual: str, ibge:
                          f"Norte e Nordeste juntos ficam com **{pct(nne)}**.")
             else:
                 comparacao = "mais" if maior["participacao"] > nne else "menos"
-                frase = (f"**{maior['nome']}** sozinho tem **{pct(maior['participacao'])} dos contratos**, {comparacao} "
+                frase = (f"Só **{maior['nome']}** tem **{pct(maior['participacao'])} dos contratos**, {comparacao} "
                          f"que os {n_nne} estados do Norte e do Nordeste juntos (**{pct(nne)}**).")
             _leitura(frase + " Quanto mais escuro no mapa, maior a parte dos contratos; o ranking ao lado dá o número.")
             esquerda, direita = st.columns([1, 1.15], gap="medium")
@@ -521,14 +544,19 @@ def painel_descritivo(pop: pd.DataFrame, amostra: pd.DataFrame, qual: str, ibge:
         with bloco("Três réguas: contratos, PIB e população"):
             destaque = _unidade_maior(resumo, "participacao", "N+NE")
             p0_pib, p0_pop = (h["p0_ou_delta0"] for h in c.HIPOTESES[:2])
+            soma_pop_exata = float(unid.loc[unid["grupo"] == "N+NE", "parte_populacao"].sum())
             _leitura(
                 f"**{destaque['nome']}: {pct(destaque['participacao'])} dos contratos, {pct(destaque['parte_pib'])} do PIB, "
                 f"{pct(destaque['parte_populacao'])} da população.** Norte e Nordeste juntos têm {pct(nne)} dos contratos, "
                 f"a {br(100 * abs(nne - p0_pib), 1)} ponto percentual da sua parte no PIB ({pct(p0_pib)}, régua de H1) "
-                f"e a {br(100 * abs(nne - p0_pop), 1)} pontos da sua parte na população ({pct(p0_pop)}, régua de H2)."
+                f"e a {br(100 * abs(nne - p0_pop), 1)} pontos da sua parte na população ({pct(p0_pop)}, régua de H2; "
+                f"o pré-registro somou as partes já arredondadas, e a soma exata no IBGE dá {pct(soma_pop_exata, 2)})."
+                + (f" A primeira linha do gráfico, {g.NOME_SOMA_NNE}, põe essa comparação lado a lado."
+                   if nivel == "regiao" else "")
             )
             grafico(g.tres_reguas(df, unid, nivel, f"Contratos, PIB e população {por_onde}", max_x=max_reguas,
-                                  legenda=(f"{base}. Ordem: % dos contratos, da maior para a menor.",)))
+                                  legenda=(f"{base}. Ordem: % dos contratos, da maior para a menor.",),
+                                  reguas_nne=(p0_pib, p0_pop)))
             numeros(tabela_unidades(pop, comparar, unid, nivel,
                                     [("participacao", "% dos contratos", lambda v: pct(v, 1))], reguas=True))
 

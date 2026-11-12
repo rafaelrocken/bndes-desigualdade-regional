@@ -15,7 +15,7 @@ from scipy import stats  # noqa: E402
 
 import calculo as c  # noqa: E402
 import graficos as g  # noqa: E402
-from dados_app import carregar, carregar_simulacao  # noqa: E402
+from dados_app import carregar, carregar_ibge, carregar_simulacao  # noqa: E402
 from tela import (  # noqa: E402
     GRUPOS,
     NOME_GRUPO,
@@ -34,6 +34,7 @@ from tela import (  # noqa: E402
     voltar_para_base,
     cabecalho,
     rodape,
+    nota_regua_populacao,
 )
 
 ALFA = 0.05  # fixado antes do sorteio
@@ -249,10 +250,11 @@ def qqplots(var: str) -> None:
         valores = amostra_grupo[var][gr]
         with coluna:
             grafico(g.qqplot(valores, f"QQ-plot: {NOME_GRUPO[gr]} (n = {inteiro(len(valores))})"))
+    menor_n = min(len(amostra_grupo[var][gr]) for gr in GRUPOS)
     st.caption(
         "Os pontos se afastam da reta nas pontas (cauda direita pesada) e andam em degraus (valores "
-        "repetidos e zeros): os dados não são normais. Com pelo menos 170 contratos por grupo, o Teorema "
-        "Central do Limite sustenta o teste t, porque a média de muitos contratos é aproximadamente normal."
+        f"repetidos e zeros): os dados não são normais. Com pelo menos {inteiro(menor_n)} contratos por grupo, "
+        "o Teorema Central do Limite sustenta o teste t, porque a média de muitos contratos é aproximadamente normal."
     )
 
 
@@ -370,6 +372,8 @@ INTERPRETACAO = {
 def aba_hipotese(hid: str) -> None:
     st.markdown(f"##### {PERGUNTAS[hid]}")
     st.info(resposta(hid), title="O que a amostra responde", icon=":material/lightbulb:")
+    if hid == "H2":
+        st.caption(nota_regua_populacao(carregar_ibge(), x, n, ALFA))
     st.markdown("###### Os números do teste")
     (bloco_proporcao if HIP[hid]["variavel"] == "grupo" else bloco_media)(hid)
     st.markdown("###### E na população? A decisão acertou?")
@@ -513,8 +517,8 @@ def aba_variabilidade() -> None:
             f"valor de H0 no teste H1 ({pct(p0_h1, 1)})": p0_h1,
         },
         f"p̂ em {inteiro(REP)} sorteios",
-        f"Fonte: {inteiro(REP)} sorteios de n = {inteiro(sim['n'])} da população de {inteiro(len(pop))} contratos "
-        "(BNDES, operações não automáticas, dados abertos)",
+        f"{inteiro(REP)} sorteios de n = {inteiro(sim['n'])} da população de {inteiro(len(pop))} contratos. "
+        f"{g.FONTE}",
     ))
 
     st.subheader("Fomos azarados?")
@@ -556,21 +560,26 @@ def aba_variabilidade() -> None:
 
 # --- Limitações (desenho, seção 9) -----------------------------------------------------
 def aba_limitacoes() -> None:
+    baixo_poder = [hid for hid in R if R[hid]["julgamento"] == "erro tipo II"]
+    setor = pop["setor"].map(g.NOME_SETOR).fillna(pop["setor"])  # nome por extenso, como no Painel 1
+    infra = (setor == "Infraestrutura").groupby(pop["grupo"]).mean()
     st.markdown(
         "**O efeito da variabilidade amostral.** Cada amostra dá números um pouco diferentes, e é por isso que "
-        "damos intervalos, não só um número. O poder baixo de H1, H3 e H4 também é variabilidade amostral: "
-        "quando a diferença verdadeira é pequena perto do ruído da amostra, o teste quase nunca a distingue de zero."
+        "damos intervalos, não só um número."
+        + (f" O poder baixo de {lista(baixo_poder)} também é variabilidade amostral: quando a diferença "
+           "verdadeira é pequena perto do ruído da amostra, o teste quase nunca a distingue de zero."
+           if baixo_poder else "")
     )
     st.markdown(
-        r"""
+        rf"""
 1. O teste conta contratos; o BNDES e o IBGE falam em valor. Um contrato de R\$ 1 mil pesa como um de R\$ 10 bi. O Painel 1 mostra as duas leituras.
 2. A base não tem as operações automáticas (via bancos repassadores), onde estão as MPME. Os números oficiais de participação regional incluem essas operações.
 3. 2002 a 2025 junta governos, políticas de juros (TJLP, PSI, TLP) e Selic muito diferentes.
-4. N+NE têm mais infraestrutura (60% contra 33%), que tem prazos mais longos por natureza. Uma diferença de prazo pode vir do setor, não da região.
+4. N+NE têm mais infraestrutura ({pct(infra["N+NE"], 0)} contra {pct(infra["Demais"], 0)}), que tem prazos mais longos por natureza. Uma diferença de prazo pode vir do setor, não da região.
 5. Spreads 0 e amortizações 0 que parecem erro de registro foram mantidos.
 6. As réguas são normativas: o BNDES não tem obrigação legal de seguir a régua populacional.
 7. Descrevemos e testamos; não explicamos. Mostrar que N+NE têm contratos mais longos não diz por quê. O trabalho não afirma causa.
-8. Fração amostrada de 14%. Os erros padrão ignoram a correção para população finita; os intervalos saem um pouco mais largos do que o necessário, do lado conservador.
+8. Fração amostrada de {pct(n / len(pop), 0)}. Os erros padrão ignoram a correção para população finita; os intervalos saem um pouco mais largos do que o necessário, do lado conservador.
 """
     )
     st.caption("N+NE = Norte e Nordeste. As oito limitações estão escritas como no desenho do trabalho (seção 9).")
@@ -584,7 +593,7 @@ ROTULOS_ABAS = {
     "h4": "H4 · spread menor?",
     "h5": "H5 · prazo diferente?",
     "comparacao": "Comparação com a população",
-    "variabilidade": "Variabilidade (1.000 sorteios)",
+    "variabilidade": f"Variabilidade ({inteiro(REP)} sorteios)",
     "limitacoes": "Limitações",
 }
 conteudo = {f"h{i}": (lambda hid=f"H{i}": aba_hipotese(hid)) for i in range(1, 6)}

@@ -11,22 +11,24 @@ import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
 import calculo as c  # noqa: E402
-from dados_app import carregar  # noqa: E402
+from dados_app import carregar, carregar_ibge  # noqa: E402
 from tela import (  # noqa: E402
-    PAGINAS_PAINEIS,
     br,
     cabecalho,
     cartoes,
     inteiro,
     link_pagina,
+    nota_regua_populacao,
+    paginas_paineis,
     pct,
-    pergunta,
     rodape,
     tabela,
     tabela_estatica,
 )
 
 pop, amostra, meta = carregar()
+ibge = carregar_ibge()
+PAINEIS = paginas_paineis()
 N = len(pop)
 calc = c.tamanho_amostra(N, E=meta["E"], confianca=meta["confianca"], pi=meta["pi"])
 n0, n, z = calc["n0"], calc["n"], calc["z"]
@@ -39,7 +41,6 @@ def em_latex(numero: str) -> str:
 
 cabecalho()
 st.title("Base de dados e amostra")
-pergunta("O BNDES compensa a desigualdade regional?")
 p0_pib, p0_pop = (h["p0_ou_delta0"] for h in c.HIPOTESES[:2])
 with st.container(border=True):
     st.markdown(
@@ -63,7 +64,7 @@ with st.container(border=True):
         "o **Painel 1** descreve a população inteira; o **Painel 2** descreve a amostra, ao lado da população; e "
         "o **Painel 3** testa as cinco hipóteses só com a amostra e confere o resultado na população."
     )
-    for coluna, (caminho, rotulo, icone) in zip(st.columns(3, gap="medium"), PAGINAS_PAINEIS):
+    for coluna, (caminho, rotulo, icone) in zip(st.columns(3, gap="medium"), PAINEIS):
         with coluna.container(border=True):  # a borda faz do link um botão largo, fácil de achar
             link_pagina(caminho, rotulo, icone)
 cartoes([
@@ -83,16 +84,24 @@ st.markdown(
     "conferimos se os intervalos e os testes acertaram."
 )
 
+# As partes de cada região nas réguas, do IBGE, como o pré-registro as escreveu (a 0,1%).
+partes = {
+    medida: (ibge.groupby("regiao")[coluna].sum() / ibge[coluna].sum()).round(3)
+    for medida, coluna in (("pib", "pib_2023"), ("populacao", "populacao_2022"))
+}
+x_nne = int((amostra["grupo"] == "N+NE").sum())
+
 st.subheader("Três réguas de \"forma justa\"")
 st.markdown(
-    """
+    f"""
 | Régua | Pergunta | Referência e fonte | Teste |
 |---|---|---|---|
-| **PIB** | Norte e Nordeste recebem a sua parte na economia? | 19,6% (IBGE, Contas Regionais 2023: NE 13,8% + N 5,8%). O próprio BNDES usa esta régua: no Relatório Anual 2015 diz ter dado a N e NE mais que a sua parte no PIB | H1 |
-| **População** | Norte e Nordeste recebem a sua parte nas pessoas? | 35,4% (IBGE, Censo 2022: NE 26,9% + N 8,5%). Régua normativa: a Constituição (art. 165, §7º) manda reduzir desigualdades inter-regionais "segundo critério populacional", e o ADCT (art. 35) fala em distribuição "proporcional à população". Vale para o orçamento federal, não para o crédito do BNDES; entra como parâmetro de justiça, não como obrigação do banco | H2 |
+| **PIB** | Norte e Nordeste recebem a sua parte na economia? | {pct(p0_pib)} (IBGE, Contas Regionais 2023: NE {pct(partes["pib"]["NE"])} + N {pct(partes["pib"]["N"])}). O próprio BNDES usa esta régua: no Relatório Anual 2015 diz ter dado a N e NE mais que a sua parte no PIB | H1 |
+| **População** | Norte e Nordeste recebem a sua parte nas pessoas? | {pct(p0_pop)} (IBGE, Censo 2022: NE {pct(partes["populacao"]["NE"])} + N {pct(partes["populacao"]["N"])}; soma das partes arredondadas, ver a nota abaixo). Régua normativa: a Constituição (art. 165, §7º) manda reduzir desigualdades inter-regionais "segundo critério populacional", e o ADCT (art. 35) fala em distribuição "proporcional à população". Vale para o orçamento federal, não para o crédito do BNDES; entra como parâmetro de justiça, não como obrigação do banco | H2 |
 | **Condições** | Norte e Nordeste pagam menos e têm mais prazo? | Política Nacional de Desenvolvimento Regional (participação maior e garantias diferenciadas para N/NE) e Estratégia Nordeste 2023 (orçamento dedicado e condições diferenciadas) | H3, H4 e H5 |
 """
 )
+st.caption(nota_regua_populacao(ibge, x_nne, len(amostra)))
 st.caption(
     "Base legal geral: Constituição Federal, art. 3º, III (objetivo de reduzir as desigualdades regionais) "
     "e art. 170, VII; o art. 165, §2º manda a lei de diretrizes orçamentárias fixar a política das "
@@ -168,7 +177,7 @@ st.latex(r"n_0 = \frac{z^2\,\pi\,(1-\pi)}{E^2} \qquad\qquad n = \frac{n_0}{1 + n
 st.markdown(
     f"""
 - **Confiança de {pct(meta["confianca"], 0)}, logo $z = {em_latex(br(z, 2))}$.** É o padrão em pesquisa: o ponto da normal que deixa 2,5% de área em cada cauda.
-- **Margem de erro $E = {br(100 * meta["E"], 0)}$ pontos percentuais.** Estreita o bastante para dizer se a proporção está perto ou longe das réguas de 19,6% e 35,4%.
+- **Margem de erro $E = {br(100 * meta["E"], 0)}$ pontos percentuais.** Estreita o bastante para dizer se a proporção está perto ou longe das réguas de {pct(p0_pib)} e {pct(p0_pop)}.
 - **$\\pi = {em_latex(br(meta["pi"], 1))}$, o caso conservador.** O produto $\\pi(1-\\pi)$ é máximo em 0,5, o que dá o maior $n$ possível; adequado porque não supomos nada sobre a proporção antes de ver os dados.
 - **Correção para população finita**, porque vamos sortear uma fração grande ({pct(n / N)}) de uma população de {inteiro(N)} contratos.
 """
@@ -202,7 +211,7 @@ st.markdown(
 )
 
 st.subheader("Os painéis")
-for caminho, rotulo, icone in PAGINAS_PAINEIS:
+for caminho, rotulo, icone in PAINEIS:
     link_pagina(caminho, rotulo, icone)
 
 rodape()
