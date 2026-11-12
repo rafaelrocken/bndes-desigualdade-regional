@@ -18,8 +18,11 @@ Uso, com o app rodando (por exemplo `streamlit run app.py --server.port 8599`):
   fáceis de ler que a página inteira.
 - O Chromium vem da variável de ambiente `CHROME`; sem ela, procura o do Playwright em
   `%LOCALAPPDATA%\\ms-playwright`. Precisa do pacote `websockets`.
-- Imprime um resumo em JSON (gráficos visíveis e desenhados, exceções na página, altura) e
-  os avisos do console.
+- Só fotografa depois que o aviso do rodapé (`TEXTO_FINAL`, o último elemento de toda página)
+  aparece: o Streamlit entrega os elementos aos poucos, e o rodapé pode chegar depois de os
+  gráficos já estarem desenhados.
+- Imprime um resumo em JSON (gráficos visíveis e desenhados, exceções na página, altura, se o
+  aviso final chegou) e os avisos do console.
 """
 import asyncio
 import base64
@@ -37,6 +40,8 @@ import websockets
 
 PORTA_CDP = 9333
 LARGURA = 1440
+# O começo do aviso que fecha toda página (tela.AVISO_FONTES): a página só está completa com ele.
+TEXTO_FINAL = "Trabalho acadêmico independente"
 
 ESTADO_JS = """
 (() => {
@@ -48,7 +53,8 @@ ESTADO_JS = """
   const principal = document.querySelector('[data-testid="stMainBlockContainer"]');
   const altura = principal ? principal.getBoundingClientRect().bottom + 120 : 0;
   const erros = [...document.querySelectorAll('[data-testid="stException"]')].length;
-  return JSON.stringify({graficos: visiveis.length, desenhados, rodando, esqueleto, altura, erros,
+  const fim = (principal ? principal.innerText : '').includes(TEXTO_FINAL);
+  return JSON.stringify({graficos: visiveis.length, desenhados, rodando, esqueleto, altura, erros, fim,
                          titulo: (document.querySelector('h1') || {}).innerText || ''});
 })()
 """
@@ -106,17 +112,18 @@ async def fotografar(url: str, saida: Path, recortes: Path | None) -> None:
                         console.append("EXC " + json.dumps(msg["params"]["exceptionDetails"])[:300])
 
             async def estado() -> dict:
-                r = await cdp("Runtime.evaluate", expression=ESTADO_JS, returnByValue=True)
+                expressao = ESTADO_JS.replace("TEXTO_FINAL", json.dumps(TEXTO_FINAL))
+                r = await cdp("Runtime.evaluate", expression=expressao, returnByValue=True)
                 return json.loads(r["result"]["value"])
 
             async def esperar(limite: float = 90) -> dict:
                 """Espera a página parar: Streamlit sem rodar, sem esqueleto, todo gráfico desenhado,
-                e o mesmo estado em quatro leituras seguidas."""
+                o aviso final na tela, e o mesmo estado em quatro leituras seguidas."""
                 estavel, ultimo, inicio = 0, None, time.time()
                 while time.time() - inicio < limite:
                     await asyncio.sleep(0.5)
                     e = await estado()
-                    pronto = (not e["rodando"] and e["esqueleto"] == 0 and e["titulo"]
+                    pronto = (not e["rodando"] and e["esqueleto"] == 0 and e["titulo"] and e["fim"]
                               and e["desenhados"] == e["graficos"])
                     chave = (e["graficos"], e["desenhados"], round(e["altura"]))
                     estavel = estavel + 1 if (pronto and chave == ultimo) else 0
