@@ -133,11 +133,12 @@ def test_painel_1_mostra_qualidade_dos_dados():
 def test_base_tabelas_de_texto_longo_nao_cortam():
     """Variáveis e regras de agregação vão em `st.table` (quebra linha), não em `st.dataframe`."""
     at = _rodar("paginas/base.py")
+    # o `$` vai escapado (`\$`) para o Markdown da célula não ler "US$ ... US$" como fórmula
     estaticas = " ".join(" ".join(map(str, t.value.to_numpy().ravel())) for t in at.table)
-    assert "TAXA FIXA EM US$" in estaticas  # a regra longa do spread
+    assert "TAXA FIXA EM US$" in estaticas.replace("\\$", "$")  # a regra longa do spread
     assert "qualitativa nominal" in estaticas  # a tabela de variáveis
     interativas = " ".join(" ".join(map(str, d.value.to_numpy().ravel())) for d in at.dataframe)
-    assert "TAXA FIXA EM US$" not in interativas
+    assert "TAXA FIXA EM US$" not in interativas.replace("\\$", "$")
 
 
 def test_painel_2_fala_do_valor():

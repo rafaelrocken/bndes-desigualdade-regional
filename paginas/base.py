@@ -174,7 +174,7 @@ tabela_estatica(
         [
             ("região (N+NE ou Demais)", "a da UF com a maior parte do valor contratado (79 contratos têm mais de uma UF)"),
             ("valor contratado", "soma dos subcréditos"),
-            ("spread (juros, % a.a.)", "média ponderada pelo valor dos subcréditos indexados em reais: TJLP e variantes (TJ462, TJ453, TJ6, TJ3), TLP, SELIC, IPCA, TR e CDI. Saem \"US$ / CESTA\" e \"TAXA FIXA EM US$\" (spread sobre moeda estrangeira não se compara com spread sobre TJLP), \"TAXA FIXA\" (ali o juro já é o custo total), \"SEM CUSTO\", \"% do CDI\" e \"OUTROS\". Contrato sem nenhum subcrédito indexado em reais fica fora de H3, H4 e da descritiva do spread"),
+            ("spread (juros, % a.a.)", "média ponderada pelo valor dos subcréditos indexados em reais: TJLP e variantes (TJ462, TJ453, TJ6, TJ3), TLP, SELIC, IPCA, TR e CDI. Saem \"US\\$ / CESTA\" e \"TAXA FIXA EM US\\$\" (spread sobre moeda estrangeira não se compara com spread sobre TJLP), \"TAXA FIXA\" (ali o juro já é o custo total), \"SEM CUSTO\", \"% do CDI\" e \"OUTROS\". Contrato sem nenhum subcrédito indexado em reais fica fora de H3, H4 e da descritiva do spread"),
             ("prazo de amortização (meses)", "média ponderada pelo valor"),
             ("porte, setor, data, UF, CNPJ", "o do subcrédito de maior valor (131 contratos têm mais de um CNPJ e 301 mais de uma data; a regra resolve todos)"),
         ],
