@@ -8,6 +8,7 @@ if _RAIZ not in sys.path:
     sys.path.insert(0, _RAIZ)
 
 import math  # noqa: E402
+from html import escape  # noqa: E402
 
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
@@ -28,7 +29,6 @@ from tela import (  # noqa: E402
     grafico,
     inteiro,
     pct,
-    pergunta,
     tabela,
     tabela_estatica,
     voltar_para_base,
@@ -122,42 +122,91 @@ for h in c.HIPOTESES:
     resultado["julgamento"] = c.julgar_decisao(r["rejeita"], resultado["verdadeiro"], v0, alt)
 
 
+# Erro tipo II "inofensivo": a diferença verdadeira é tão pequena que o poder do teste fica abaixo de 20%.
+inofensivo = {hid: R[hid]["julgamento"] == "erro tipo II" and R[hid]["poder"] < 0.2 for hid in R}
+
 # --- Cabeçalho -------------------------------------------------------------------------
-cabecalho()
 voltar_para_base()
-st.title("Painel 3 — Inferência")
-pergunta("O que a amostra permite afirmar sobre as cinco hipóteses, e a inferência acertou?")
+cabecalho(
+    "Painel 3 · Inferência",
+    "O que a amostra permite afirmar sobre as cinco hipóteses, e a inferência acertou?",
+    f"Os testes e os intervalos usam **só a amostra** ({inteiro(n)} contratos). Nível de significância "
+    f"**α = {br(ALFA)}**, fixado antes do sorteio, junto com as cinco hipóteses. A população entra "
+    "apenas na conferência: o intervalo contém o valor verdadeiro? A decisão do teste acertou?",
+)
 rejeitadas = sum(R[h]["teste"]["rejeita"] for h in R)
 INTERVALOS = {"π": "H1", "δ do spread": "H3", "δ do prazo": "H5"}  # H2 e H4 repetem os de H1 e H3
 contem = sum(R[hid]["contem"] for hid in INTERVALOS.values())
 cartoes([
-    {"rotulo": "Testes que rejeitam H0", "valor": f"{rejeitadas} de {len(R)}",
+    {"rotulo": "Testes que rejeitam H0", "valor": f"{rejeitadas} de {len(R)}", "sub": "decisão com a amostra, a 5%",
      "ajuda": "Decisão de cada teste com a amostra, a 5% de significância."},
-    {"rotulo": "Nível de significância (α)", "valor": br(ALFA), "ajuda": "Fixado antes do sorteio, junto com as hipóteses."},
-    {"rotulo": "Contratos na amostra (n)", "valor": inteiro(n), "ajuda": "Os testes e os intervalos usam só a amostra."},
+    {"rotulo": "Nível de significância (α)", "valor": br(ALFA), "sub": "fixado antes do sorteio",
+     "ajuda": "Fixado antes do sorteio, junto com as hipóteses."},
+    {"rotulo": "Contratos na amostra (n)", "valor": inteiro(n), "sub": "os testes usam só a amostra",
+     "ajuda": "Os testes e os intervalos usam só a amostra."},
     {"rotulo": "Intervalos que contêm o valor verdadeiro", "valor": f"{contem} de {len(INTERVALOS)}",
+     "sub": "π, δ do spread e δ do prazo",
      "ajuda": "Os intervalos de 95% para π, para δ do spread e para δ do prazo, conferidos na população."},
 ])
-st.markdown(
-    f"Os testes e os intervalos usam **só a amostra** ({inteiro(n)} contratos). Nível de significância "
-    f"**α = {br(ALFA)}**, fixado antes do sorteio, junto com as cinco hipóteses. A população entra "
-    "apenas na conferência: o intervalo contém o valor verdadeiro? A decisão do teste acertou?"
-)
+
+
+# --- Placar dos cinco testes: a decisão, o valor-p e a conferência na população -------
+PERGUNTA_CURTA = {
+    "H1": f"Norte e Nordeste têm {pct(HIP['H1']['p0_ou_delta0'])} dos contratos, a régua do PIB?",
+    "H2": f"Norte e Nordeste têm {pct(HIP['H2']['p0_ou_delta0'])} dos contratos, a régua da população?",
+    "H3": "O spread de Norte e Nordeste é diferente?",
+    "H4": "Norte e Nordeste pagam spread menor?",
+    "H5": "O prazo de Norte e Nordeste é diferente?",
+}
+SIMBOLO = {"grupo": "π", "spread": "δ", "prazo_amortizacao": "δ"}
+
+
+def acertou(hid: str) -> tuple[str, str]:
+    """O texto e a classe de cor da coluna "A decisão acertou?", do julgamento já calculado
+    (`calculo.julgar_decisao`); o erro tipo II é "inofensivo" pelo mesmo critério das abas."""
+    julgamento = R[hid]["julgamento"]
+    if julgamento == "acerto":
+        return "acertou", "acertou"
+    if julgamento == "erro tipo II" and inofensivo[hid]:
+        return "erro tipo II inofensivo", "inofensivo"
+    return julgamento, "errou"
+
+
+def placar_html() -> str:
+    linhas = []
+    for hid, h in HIP.items():
+        r, var = R[hid]["teste"], h["variavel"]
+        texto, classe = acertou(hid)
+        selo = "rejeita" if r["rejeita"] else "nao-rejeita"
+        linhas.append(
+            f'<tr class="placar-linha"><td class="teste">{hid}</td><td>{escape(PERGUNTA_CURTA[hid])}</td>'
+            f'<td><span class="selo {selo}">{decisao(r["rejeita"])}</span></td><td>{fp(r["p_valor"])}</td>'
+            f'<td>{SIMBOLO[var]} = {formatar(var, R[hid]["verdadeiro"])}</td>'
+            f'<td class="{classe}">{texto}</td></tr>'
+        )
+    cabeca = ("<tr><th>Teste</th><th>Pergunta</th><th>Decisão (α = 0,05)</th><th>Valor-p</th>"
+              "<th>Valor verdadeiro (população)</th><th>A decisão acertou?</th></tr>")
+    return (f'<div class="placar-bloco"><p class="placar-titulo">{rejeitadas} de {len(R)} testes rejeitam H0</p>'
+            f'<table class="placar"><thead>{cabeca}</thead><tbody>{"".join(linhas)}</tbody></table></div>')
+
+
+st.markdown(placar_html(), unsafe_allow_html=True)
 st.caption(
     "H1 a H5 são os nomes dos cinco testes. A hipótese alternativa de cada teste aparece escrita por "
     "extenso, para não confundir com o teste H1."
 )
-st.info(
-    "**Os dois parâmetros.** H1 e H2 testam o mesmo parâmetro de proporção, **π**, a proporção dos contratos "
-    "que vão ao Norte e Nordeste, contra duas réguas diferentes (o PIB e a população).  \n"
-    "H3 e H4 testam o mesmo parâmetro de média, **δ**, a diferença entre o spread médio do Norte e Nordeste "
-    "e o spread médio das demais regiões: uma diferença de médias populacionais. São duas hipóteses diferentes "
-    "sobre o mesmo δ: H3 (bilateral) pergunta se há diferença; H4 (unilateral) pergunta se o Norte e Nordeste "
-    "pagam menos. A diferença de médias foi escolhida porque a pergunta do trabalho compara regiões, e a média "
-    "de um grupo isolado não diz se ele é tratado melhor ou pior que o outro.  \n"
-    "H5, sobre o prazo de amortização, é um teste extra, com o mesmo desenho de H3.",
-    icon=":material/info:",
-)
+with st.expander("Os dois parâmetros: π e δ"):
+    st.info(
+        "**Os dois parâmetros.** H1 e H2 testam o mesmo parâmetro de proporção, **π**, a proporção dos contratos "
+        "que vão ao Norte e Nordeste, contra duas réguas diferentes (o PIB e a população).  \n"
+        "H3 e H4 testam o mesmo parâmetro de média, **δ**, a diferença entre o spread médio do Norte e Nordeste "
+        "e o spread médio das demais regiões: uma diferença de médias populacionais. São duas hipóteses diferentes "
+        "sobre o mesmo δ: H3 (bilateral) pergunta se há diferença; H4 (unilateral) pergunta se o Norte e Nordeste "
+        "pagam menos. A diferença de médias foi escolhida porque a pergunta do trabalho compara regiões, e a média "
+        "de um grupo isolado não diz se ele é tratado melhor ou pior que o outro.  \n"
+        "H5, sobre o prazo de amortização, é um teste extra, com o mesmo desenho de H3.",
+        icon=":material/info:",
+    )
 
 
 # --- Um bloco por hipótese -------------------------------------------------------------
@@ -310,7 +359,6 @@ def frase_julgamento(res: dict) -> str:
 
 r1, r2, r3, r4, r5 = (R[h] for h in ("H1", "H2", "H3", "H4", "H5"))
 p0_1, p0_2 = HIP["H1"]["p0_ou_delta0"], HIP["H2"]["p0_ou_delta0"]
-inofensivo = {hid: R[hid]["julgamento"] == "erro tipo II" and R[hid]["poder"] < 0.2 for hid in R}
 u4 = r4["limite_unilateral"]
 m5 = pop_grupo["prazo_amortizacao"]
 
@@ -383,18 +431,20 @@ def aba_hipotese(hid: str) -> None:
 
 # --- Comparação com a população --------------------------------------------------------
 def aba_comparacao() -> None:
-    st.markdown(
-        "Na população o valor verdadeiro é conhecido. **Como julgamos acerto:** se o valor verdadeiro é "
-        "diferente do de H0, rejeitar é acerto e não rejeitar é **erro tipo II**; se é igual (ou, em H4, se "
-        "cai do lado de H0), rejeitar seria **erro tipo I**. Para H3 a H5, o valor verdadeiro é a diferença "
-        "de médias da população. O **poder** é a chance de o teste rejeitar H0 numa amostra como a nossa, se "
-        "o valor verdadeiro for o da população (aproximação normal)."
-    )
-    st.markdown(
-        "Dois cuidados. Numa população finita e real, o valor verdadeiro quase nunca é **exatamente** o de "
-        "H0, então o erro tipo I aqui é hipotético. E um erro tipo II não quer dizer teste mal feito: quando "
-        "a diferença verdadeira é pequena, o poder é baixo e o teste quase sempre deixa de rejeitar."
-    )
+    # A regra do julgamento e os dois cuidados descem para um expansor: o placar do topo já mostra o resultado.
+    with st.expander("Como julgamos o acerto, e dois cuidados"):
+        st.markdown(
+            "Na população o valor verdadeiro é conhecido. **Como julgamos acerto:** se o valor verdadeiro é "
+            "diferente do de H0, rejeitar é acerto e não rejeitar é **erro tipo II**; se é igual (ou, em H4, se "
+            "cai do lado de H0), rejeitar seria **erro tipo I**. Para H3 a H5, o valor verdadeiro é a diferença "
+            "de médias da população. O **poder** é a chance de o teste rejeitar H0 numa amostra como a nossa, se "
+            "o valor verdadeiro for o da população (aproximação normal)."
+        )
+        st.markdown(
+            "Dois cuidados. Numa população finita e real, o valor verdadeiro quase nunca é **exatamente** o de "
+            "H0, então o erro tipo I aqui é hipotético. E um erro tipo II não quer dizer teste mal feito: quando "
+            "a diferença verdadeira é pequena, o poder é baixo e o teste quase sempre deixa de rejeitar."
+        )
 
     linhas = []
     for hid, h in HIP.items():
@@ -463,9 +513,10 @@ def aba_comparacao() -> None:
                 "O IC contém a média da população?": "sim" if inf <= media_pop <= sup else "não",
             })
     tabela(pd.DataFrame(linhas))
-    st.markdown("**Interpretação, teste por teste** (o mesmo texto do fim de cada aba)")
-    for hid in HIP:
-        st.markdown(INTERPRETACAO[hid])
+    # O mesmo texto do fim de cada aba: aqui ele repete, então fica num expansor.
+    with st.expander("Interpretação, teste por teste (o mesmo texto do fim de cada aba)"):
+        for hid in HIP:
+            st.markdown(INTERPRETACAO[hid])
 
 
 # --- Variabilidade amostral: 1.000 sorteios, pré-calculados ----------------------------
@@ -484,10 +535,14 @@ def aba_variabilidade() -> None:
         f"Tudo nas outras abas vem de **uma** amostra. Para ver o efeito da variabilidade amostral, repetimos o "
         f"sorteio **{inteiro(REP)} vezes**, com as sementes {inteiro(sim['semente_inicial'])} a "
         f"{inteiro(sim['semente_final'])} (nenhuma é a semente do trabalho), sempre com n = {inteiro(sim['n'])}, e "
-        "refizemos os cinco testes em cada amostra, com as mesmas funções de cálculo. A conta foi feita uma vez, "
-        "fora do app, e os resultados estão gravados no repositório (`dados/simulacao.json`, gerado por "
-        "`ferramentas/simular_sorteios.py`). É um exercício de estudo: nenhum número oficial dos testes vem daqui."
+        "refizemos os cinco testes em cada amostra, com as mesmas funções de cálculo."
     )
+    with st.expander("Como a conta foi feita"):
+        st.markdown(
+            "A conta foi feita uma vez, fora do app, e os resultados estão gravados no repositório "
+            "(`dados/simulacao.json`, gerado por `ferramentas/simular_sorteios.py`). É um exercício de estudo: "
+            "nenhum número oficial dos testes vem daqui."
+        )
     tabela_estatica(pd.DataFrame([
         {
             "Teste": hid,
