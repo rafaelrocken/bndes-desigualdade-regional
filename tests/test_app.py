@@ -28,6 +28,21 @@ def _textos(at: AppTest) -> str:
     return " ".join(partes)
 
 
+def _cabecalho(at: AppTest) -> str:
+    """O HTML do cabeçalho da página (linha do nome da página, título com a pergunta, contexto e autoria)."""
+    return next(m.value for m in at.markdown if 'class="e-topo"' in m.value)
+
+
+def _titulo_da_pagina(at: AppTest) -> str:
+    return re.search(r'class="e-titulo"[^>]*>(.*?)</p>', _cabecalho(at)).group(1)
+
+
+def _cartoes(at: AppTest) -> list[list[str]]:
+    """Cada linha de cartões de indicador da página, como a lista do HTML de cada cartão."""
+    linhas = [m.value for m in at.markdown if m.value.startswith('<div class="kpis"')]
+    return [linha.split('<div class="kpi"')[1:] for linha in linhas]
+
+
 def _graficos(at: AppTest) -> int:
     """Quantos gráficos Altair/Vega-Lite a página desenhou."""
     return len(at.get("vega_lite_chart"))
@@ -56,7 +71,7 @@ def test_navegacao_troca_de_pagina(pagina, titulo):
     at = AppTest.from_file(str(RAIZ / "app.py"), default_timeout=TEMPO).run()
     at.switch_page(pagina).run()
     assert not at.exception
-    assert at.title[0].value.startswith(titulo)
+    assert f'class="e-sobre">{titulo} · ' in _cabecalho(at)
 
 
 def test_inferencia_mostra_cinco_hipoteses():
@@ -280,13 +295,16 @@ def test_paineis_descritivos_tem_as_tres_abas_e_so_as_medidas_abertas(pagina):
     (por grupo, e as medidas de spread e de prazo) vêm abertas, sem clique; as demais, recolhidas."""
     at = _rodar(pagina)
     assert [t.label for t in at.tabs] == ["Onde estão os contratos", "Condições: spread e prazo", "Qualidade dos dados"]
-    assert at.expander and all(e.label.startswith("Ver os números") for e in at.expander)
+    # no Painel 2, a comparação da amostra com a população por extenso também desce para um expansor
+    at_expander = [e for e in at.expander if e.label != "Ver a comparação por extenso"]
+    assert len(at.expander) - len(at_expander) == (1 if "amostra" in pagina else 0)
+    assert at_expander and all(e.label.startswith("Ver os números") for e in at_expander)
 
     def primeira_coluna(expansor) -> str:
         return expansor.dataframe[0].value.columns[0]
 
-    abertos = [e for e in at.expander if e.proto.expanded]
-    fechados = [e for e in at.expander if not e.proto.expanded]
+    abertos = [e for e in at_expander if e.proto.expanded]
+    fechados = [e for e in at_expander if not e.proto.expanded]
     # abertos: as frequências e proporções por grupo, e a descritiva de spread e a de prazo
     assert sorted(primeira_coluna(e) for e in abertos) == ["Grupo", "Medida", "Medida"]
     assert all(e.label == "Ver os números" for e in abertos)
@@ -361,18 +379,24 @@ def test_setores_com_acento_nas_tabelas():
 @pytest.mark.parametrize("pagina", PAGINAS)
 def test_cada_pagina_abre_com_a_pergunta_e_os_numeros_grandes(pagina):
     at = _rodar(pagina)
-    corpo = [m.value for m in at.markdown if m.value != f"**{tela.TITULO_APP}**"]  # sem o cabeçalho
+    titulo = _titulo_da_pagina(at)
+    assert titulo.endswith("?")
     if pagina == "paginas/base.py":
-        # na raiz a pergunta do trabalho é a do cabeçalho; a página não a repete
-        assert not any(m.startswith("#### ") and tela.TITULO_APP in m for m in corpo)
-    else:
-        assert corpo[0].startswith("#### ") and corpo[0].endswith("?")
-    assert 3 <= len(at.metric) - (4 if "populacao" in pagina or "amostra" in pagina else 0) <= 4
+        # na raiz o título é a pergunta do trabalho, e a página não a repete abaixo
+        assert titulo == tela.TITULO_APP
+        assert sum(tela.TITULO_APP in m.value for m in at.markdown) == 1
+    # a primeira linha de números grandes (na base, depois dos três cartões das réguas) tem 3 ou 4 cartões
+    linhas = _cartoes(at)
+    numeros = linhas[1] if pagina == "paginas/base.py" else linhas[0]
+    assert 3 <= len(numeros) <= 4
+    assert not at.metric  # os cartões são HTML no estilo da IA001, não `st.metric`
 
 
 def test_painel_2_cartoes_tem_a_diferenca_para_a_populacao():
-    cartoes = _rodar("paginas/amostra.py").metric[:4]
-    assert all("da população" in m.delta for m in cartoes)
+    cartoes = _cartoes(_rodar("paginas/amostra.py"))[0]
+    assert len(cartoes) == 4
+    # a primeira linha abaixo do número grande é a diferença para a população
+    assert all(re.search(r'class="k-val">[^<]+</p><p class="k-sub">[^<]+ da população</p>', c) for c in cartoes)
 
 
 def _links(at: AppTest) -> list[tuple[str, str]]:
@@ -381,7 +405,7 @@ def _links(at: AppTest) -> list[tuple[str, str]]:
 
 def test_raiz_tem_links_para_os_tres_paineis():
     at = AppTest.from_file(str(RAIZ / "app.py"), default_timeout=TEMPO).run()
-    assert at.title[0].value == "Base de dados e amostra"
+    assert 'class="e-sobre">Base de dados e amostra</p>' in _cabecalho(at)
     paginas = [pagina for pagina, _ in _links(at)]
     # os botões do bloco de abertura e os links do fim da página
     assert paginas == ["populacao", "amostra", "inferencia"] * 2
@@ -399,8 +423,8 @@ def test_cada_painel_tem_link_de_volta_para_a_base(pagina):
 def test_cabecalho_e_rodape_em_todas_as_paginas(pagina):
     at = _rodar(pagina)
     textos = _textos(at)
-    assert at.markdown[0].value == f"**{tela.TITULO_APP}**"  # o cabeçalho vem primeiro
-    assert tela.AUTORIA in textos
+    assert 'class="e-topo"' in at.markdown[0].value  # o cabeçalho vem primeiro
+    assert tela.AUTORIA in _cabecalho(at) and tela.AUTORIA in textos
     assert at.caption[-1].value == tela.AVISO_FONTES  # o aviso fecha a página
     rodape = at.markdown[-1].value + at.markdown[-2].value
     assert "dadosabertos.bndes.gov.br" in rodape and "sidra.ibge.gov.br/tabela/5938" in rodape
@@ -490,7 +514,8 @@ def test_tres_reguas_na_regiao_tem_a_linha_da_soma():
 
 def test_frase_do_estado_sem_concordancia_de_genero():
     textos = _textos(_com_nivel("paginas/populacao.py", "estado"))
-    assert "sozinho" not in textos and "Só **São Paulo (SP)** tem" in textos
+    # a frase é o título do primeiro bloco: o negrito do markdown sai, o título já é forte
+    assert "sozinho" not in textos and "Só São Paulo (SP) tem" in textos
 
 
 def test_escala_das_tres_reguas_cobre_a_linha_da_soma():
@@ -500,3 +525,65 @@ def test_escala_das_tres_reguas_cobre_a_linha_da_soma():
                     if _titulo_do_grafico(s).startswith("Contratos, PIB e população"))
         fim = spec["layer"][0]["encoding"]["x"]["scale"]["domain"][1]
         assert fim >= 1.15 * max(h["p0_ou_delta0"] for h in tela.c.HIPOTESES[:2])
+
+
+# ---------------------------------------------------------------- Task 7c: estilo da IA001
+
+@pytest.mark.parametrize("nivel", ["regiao", "estado"])
+def test_cada_bloco_dos_paineis_tem_titulo_que_diz_a_conclusao(nivel):
+    """Os oito blocos do painel descritivo (três abas) abrem com o título forte, nos dois níveis."""
+    for pagina in ("paginas/populacao.py", "paginas/amostra.py"):
+        at = _com_nivel(pagina, nivel)
+        titulos = [re.search(r'class="e-tit"[^>]*>(.*?)</p>', m.value).group(1)
+                   for m in at.markdown if 'class="e-tit"' in m.value]
+        extra = 1 if pagina == "paginas/amostra.py" else 0  # o bloco "A amostra se parece com a população?"
+        assert len(titulos) == 8 + extra, pagina
+        assert all(t.endswith(".") and "**" not in t for t in titulos)
+        assert ("O Sudeste concentra" if nivel == "regiao" else "Só São Paulo (SP) tem") in titulos[extra]
+
+
+def _placar(at: AppTest) -> str:
+    return next(m.value for m in at.markdown if 'class="placar"' in m.value)
+
+
+def test_placar_do_painel_3_tem_as_cinco_decisoes():
+    import pandas as pd
+
+    import calculo as c
+
+    at = _rodar("paginas/inferencia.py")
+    placar = _placar(at)
+    linhas = placar.split('<tr class="placar-linha">')[1:]
+    assert len(linhas) == 5
+    amostra = pd.read_parquet(RAIZ / "dados" / "amostra.parquet")
+    pop = pd.read_parquet(RAIZ / "dados" / "populacao.parquet")
+    n, x = len(amostra), int((amostra["grupo"] == "N+NE").sum())
+    rejeicoes = 0
+    for h, linha in zip(c.HIPOTESES, linhas):
+        assert f'<td class="teste">{h["id"]}</td>' in linha
+        if h["variavel"] == "grupo":
+            rejeita = c.teste_z_proporcao(x, n, h["p0_ou_delta0"])["rejeita"]
+            verdadeiro = float((pop["grupo"] == "N+NE").mean())
+        else:
+            a = amostra.loc[amostra["grupo"] == "N+NE", h["variavel"]]
+            b = amostra.loc[amostra["grupo"] == "Demais", h["variavel"]]
+            rejeita = c.teste_welch(a, b, h["alternativa"])["rejeita"]
+            medias = pop.groupby("grupo")[h["variavel"]].mean()
+            verdadeiro = float(medias["N+NE"] - medias["Demais"])
+        rejeicoes += rejeita
+        selo = re.search(r'<span class="selo [^"]+">([^<]+)</span>', linha).group(1)
+        assert selo == ("rejeita H0" if rejeita else "não rejeita H0"), h["id"]
+        julgamento = c.julgar_decisao(rejeita, verdadeiro, h["p0_ou_delta0"], h["alternativa"])
+        ultima = re.findall(r"<td[^>]*>([^<]*)</td>", linha)[-1]
+        assert ultima == ("acertou" if julgamento == "acerto" else ultima), h["id"]
+        assert ultima.startswith(julgamento) or (julgamento == "acerto" and ultima == "acertou"), h["id"]
+    assert rejeicoes == 2
+    assert f"{rejeicoes} de 5 testes rejeitam H0" in placar
+    assert "aceita" not in placar.lower()
+
+
+def test_os_dois_parametros_descem_para_um_expansor_fechado():
+    at = _rodar("paginas/inferencia.py")
+    expansor = next(e for e in at.expander if e.label.startswith("Os dois parâmetros"))
+    assert not expansor.proto.expanded
+    assert any("diferença de médias populacionais" in i.value for i in expansor.info)
