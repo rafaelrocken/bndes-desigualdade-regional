@@ -21,6 +21,8 @@ P0_PIB, P0_POP = (h["p0_ou_delta0"] for h in c.HIPOTESES[:2])
         (-0.01, +1, 0.0, "neutro"),  # exatamente 1 p.p.: ainda não passa do limiar
         (-0.3, -1, 0.1, "bom"),  # spread menor que o das demais: favorece
         (+0.05, -1, 0.1, "neutro"),  # dentro da faixa "praticamente igual"
+        (+0.005, +1, 0.01, "neutro"),  # a favor, mas dentro de 1 p.p.: a zona cinza vale para os dois lados
+        (+0.02, +1, 0.01, "bom"),  # a favor e fora da faixa
     ],
 )
 def test_tom_da_nota(dif, sentido, igual, esperado):
@@ -34,11 +36,18 @@ def test_nota_da_regua_acima_e_abaixo():
     assert acima == {"texto": "9,4 p.p. acima da régua do PIB (19,6%)", "tom": "bom", "sobe": True}
     perto = tela.nota_regua(0.19051, P0_PIB, "do PIB")
     assert perto["texto"] == "0,5 p.p. abaixo da régua do PIB (19,6%)" and perto["tom"] == "neutro"
+    # a favor da promessa, mas dentro de 1 p.p.: também cinza, sem seta
+    perto_acima = tela.nota_regua(0.1972, P0_PIB, "do PIB")
+    assert perto_acima["texto"] == "0,1 p.p. acima da régua do PIB (19,6%)" and perto_acima["tom"] == "neutro"
+    assert "▲" not in tela.nota_html(perto_acima)
 
 
 def test_nota_das_condicoes():
-    igual = tela.nota_condicao(-0.07, 2.72, -1, "um spread menor", tela.LIMIAR_SPREAD)
+    igual = tela.nota_condicao(-0.07, 2.72, -1, "um spread menor", tela.QUASE_IGUAL * 2.72)
     assert igual["tom"] == "neutro" and igual["texto"].startswith("praticamente igual")
+    # o limiar do spread é relativo à média: 0,9 p.p. a mais (um terço da média) já é vermelho
+    caro = tela.nota_condicao(0.9, 2.72, -1, "um spread menor", tela.QUASE_IGUAL * 2.72)
+    assert caro["tom"] == "crit" and "a promessa era um spread menor" in caro["texto"]
     prazo = tela.nota_condicao(28.4, 86.6, +1, "um prazo maior", 0.05 * 86.6)
     assert prazo["tom"] == "bom" and prazo["sobe"] and prazo["texto"].startswith("maior em Norte e Nordeste")
     contra = tela.nota_condicao(-20.0, 86.6, +1, "um prazo maior", 0.05 * 86.6)
@@ -87,6 +96,10 @@ def test_cartoes_do_painel_2_dizem_a_diferenca_para_a_populacao():
     itens = tela.itens_descritivos(pop, amostra, "amostra")
     assert itens[0]["valor"] == tela.pct(float((amostra["grupo"] == "N+NE").mean()), 1)
     assert all(item["sub"][0].endswith("da população") for item in itens)
+    # 19,7% na amostra contra a régua do PIB (19,6%): ruído de sorteio, cinza e sem seta
+    nota_pib = itens[0]["notas"][1]
+    assert nota_pib["texto"] == "0,1 p.p. acima da régua do PIB (19,6%)" and nota_pib["tom"] == "neutro"
+    assert "▲" not in tela.nota_html(nota_pib)
 
 
 # ---------------------------------------------------------------- título do bloco

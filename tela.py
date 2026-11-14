@@ -160,13 +160,15 @@ def _html(trecho: str, onde=None) -> None:
 
 # --- Cartões de indicador (no estilo do dashboard da IA001) ---------------------------
 #
-# Cor das notas: verde (`bom`) só quando o resultado favorece a promessa do BNDES ao Norte e
-# Nordeste; vermelho (`crit`) quando a contraria por mais do que o limiar (1 p.p. nas
-# proporções e no spread); cinza (`neutro`) no resto. A seta (▲ acima, ▼ abaixo) só aparece
-# nas notas coloridas.
+# Cor das notas: cinza (`neutro`) quando a diferença é pequena, para qualquer lado (até 1 p.p.
+# nas proporções; até 5% da média das demais regiões no spread e no prazo); fora dessa faixa,
+# verde (`bom`) quando o resultado favorece a promessa do BNDES ao Norte e Nordeste e
+# vermelho (`crit`) quando a contraria. A seta (▲ acima, ▼ abaixo) só aparece nas notas
+# coloridas. A faixa é simétrica para que um ruído de sorteio não pinte de verde o que os
+# testes dizem que não difere.
 
 LIMIAR_PROPORCAO = 0.01  # 1 ponto percentual, em proporção
-LIMIAR_SPREAD = 1.0  # 1 ponto percentual de spread (% a.a.)
+# Spread e prazo usam a faixa relativa: 1 p.p. de spread seria um terço da média (~2,7% a.a.).
 QUASE_IGUAL = 0.05  # "praticamente igual": menos de 5% da média das demais regiões (o critério da leitura)
 
 
@@ -188,7 +190,7 @@ def nota_regua(valor: float, regua: float, nome: str) -> dict:
     dif = valor - regua
     return {
         "texto": f"{br(100 * abs(dif), 1)} p.p. {'acima' if dif >= 0 else 'abaixo'} da régua {nome} ({pct(regua)})",
-        "tom": tom_nota(dif, +1),
+        "tom": tom_nota(dif, +1, igual=LIMIAR_PROPORCAO),
         "sobe": dif >= 0,
     }
 
@@ -390,7 +392,7 @@ button[data-baseweb="tab"] p{font-size:1rem;font-weight:600}
 .stApp .selo{display:inline-block;padding:2px 10px;border-radius:99px;font-size:.8rem;font-weight:650;white-space:nowrap}
 .stApp .selo.rejeita{background:var(--ardosia);color:#fff}
 .stApp .selo.nao-rejeita{background:#e3e7ec;color:var(--tinta2)}
-.stApp table.placar td.acertou{color:var(--bom);font-weight:600}
+.stApp table.placar td.acertou{color:var(--tinta);font-weight:700}
 .stApp table.placar td.errou{color:var(--crit);font-weight:600}
 .stApp table.placar td.inofensivo{color:var(--apagado);font-weight:600}
 .stApp .placar-titulo{font-size:1.14rem;font-weight:700;font-stretch:82%;margin:.4em 0 0;color:var(--tinta)}
@@ -652,7 +654,8 @@ def itens_descritivos(pop: pd.DataFrame, amostra: pd.DataFrame, qual: str) -> li
         {"rotulo": "Spread: Norte e Nordeste − demais", "valor": f"{com_sinal(ind['spread'], 2)} p.p.",
          "sub": delta("spread", 2, "p.p.")
          + [f"médias: {br(ind['spread_nne'], 2)} contra {br(ind['spread_demais'], 2)} % a.a."],
-         "notas": [nota_condicao(ind["spread"], ind["spread_demais"], -1, "um spread menor", LIMIAR_SPREAD)],
+         "notas": [nota_condicao(ind["spread"], ind["spread_demais"], -1, "um spread menor",
+                                 QUASE_IGUAL * abs(ind["spread_demais"]))],
          "ajuda": "Diferença entre os spreads médios (% ao ano). Negativo: Norte e Nordeste pagam menos. É o δ de H3 e H4."},
         {"rotulo": "Prazo: Norte e Nordeste − demais", "valor": f"{com_sinal(ind['prazo'], 1)} meses",
          "sub": delta("prazo", 1, "meses")
@@ -673,6 +676,12 @@ def cartoes_descritivos(pop: pd.DataFrame, amostra: pd.DataFrame, qual: str) -> 
 def _unidade_maior(resumo: pd.DataFrame, campo: str, grupo: str | None = None) -> pd.Series:
     base = resumo if grupo is None else resumo[resumo["grupo"] == grupo]
     return base.sort_values(campo, ascending=False, kind="stable").iloc[0]
+
+
+def _pontos(dif: float) -> str:
+    """Distância em pontos percentuais, com a concordância: "0,5 ponto", "16,3 pontos"."""
+    v = round(100 * abs(dif), 1)
+    return f"{br(v, 1)} {'ponto' if v < 2 else 'pontos'}"
 
 
 def titulo_onde(resumo: pd.DataFrame, unid: pd.DataFrame, nivel: str) -> str:
@@ -762,10 +771,8 @@ def painel_descritivo(pop: pd.DataFrame, amostra: pd.DataFrame, qual: str, ibge:
         with bloco(
             f"{destaque['nome']}: {pct(destaque['participacao'])} dos contratos, {pct(destaque['parte_pib'])} do PIB, "
             f"{pct(destaque['parte_populacao'])} da população.",
-            f"Norte e Nordeste juntos têm {pct(nne)} dos contratos, "
-            f"a {br(100 * abs(nne - p0_pib), 1)} ponto percentual da sua parte no PIB ({pct(p0_pib)}, régua de H1) "
-            f"e a {br(100 * abs(nne - p0_pop), 1)} pontos da sua parte na população ({pct(p0_pop)}, régua de H2; "
-            f"o pré-registro somou as partes já arredondadas, e a soma exata no IBGE dá {pct(soma_pop_exata, 2)})."
+            f"Norte e Nordeste juntos têm {pct(nne)} dos contratos: a {_pontos(nne - p0_pib)} "
+            f"da régua do PIB ({pct(p0_pib)}) e a {_pontos(nne - p0_pop)} da régua da população ({pct(p0_pop)})."
             + (f" A primeira linha do gráfico, {g.NOME_SOMA_NNE}, põe essa comparação lado a lado."
                if nivel == "regiao" else ""),
             secao="Três réguas: contratos, PIB e população",
@@ -773,6 +780,9 @@ def painel_descritivo(pop: pd.DataFrame, amostra: pd.DataFrame, qual: str, ibge:
             grafico(g.tres_reguas(df, unid, nivel, f"Contratos, PIB e população {por_onde}", max_x=max_reguas,
                                   legenda=(f"{base}. Ordem: % dos contratos, da maior para a menor.",),
                                   reguas_nne=(p0_pib, p0_pop)))
+            st.caption(f"A régua do PIB ({pct(p0_pib)}) é a de H1; a da população ({pct(p0_pop)}), a de H2. "
+                       "O pré-registro somou as partes já arredondadas, e a soma exata no IBGE dá "
+                       f"{pct(soma_pop_exata, 2)}.")
             numeros(tabela_unidades(pop, comparar, unid, nivel,
                                     [("participacao", "% dos contratos", lambda v: pct(v, 1))], reguas=True))
 
