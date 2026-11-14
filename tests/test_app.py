@@ -547,6 +547,16 @@ def _placar(at: AppTest) -> str:
     return next(m.value for m in at.markdown if 'class="placar"' in m.value)
 
 
+# A coluna "A decisão acertou?" esperada nesta amostra (semente 20261112).
+ESPERADO_PLACAR = {
+    "H1": "erro tipo II inofensivo",
+    "H2": "acertou",
+    "H3": "erro tipo II inofensivo",
+    "H4": "erro tipo II inofensivo",
+    "H5": "acertou",
+}
+
+
 def test_placar_do_painel_3_tem_as_cinco_decisoes():
     import pandas as pd
 
@@ -576,8 +586,11 @@ def test_placar_do_painel_3_tem_as_cinco_decisoes():
         assert selo == ("rejeita H0" if rejeita else "não rejeita H0"), h["id"]
         julgamento = c.julgar_decisao(rejeita, verdadeiro, h["p0_ou_delta0"], h["alternativa"])
         ultima = re.findall(r"<td[^>]*>([^<]*)</td>", linha)[-1]
-        assert ultima == ("acertou" if julgamento == "acerto" else ultima), h["id"]
-        assert ultima.startswith(julgamento) or (julgamento == "acerto" and ultima == "acertou"), h["id"]
+        # Nesta amostra, os três erros tipo II (H1, H3, H4) são inofensivos (poder abaixo de 20%,
+        # o critério das abas); H2 e H5 acertam.
+        esperado = {"acerto": "acertou", "erro tipo II": "erro tipo II inofensivo"}[julgamento]
+        assert ultima == esperado, h["id"]
+        assert ultima == ESPERADO_PLACAR[h["id"]], h["id"]
     assert rejeicoes == 2
     assert f"{rejeicoes} de 5 testes rejeitam H0" in placar
     assert "aceita" not in placar.lower()
