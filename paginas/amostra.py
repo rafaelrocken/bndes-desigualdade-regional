@@ -14,11 +14,11 @@ from dados_app import carregar, carregar_ibge, carregar_malhas  # noqa: E402
 from tela import (  # noqa: E402
     GRUPOS,
     NOME_GRUPO,
+    bloco,
     br,
     cartoes_descritivos,
     inteiro,
     painel_descritivo,
-    pergunta,
     seletor_nivel,
     voltar_para_base,
     cabecalho,
@@ -28,15 +28,14 @@ from graficos import NOME_REGIAO  # noqa: E402
 
 pop, amostra, meta = carregar()
 
-cabecalho()
 voltar_para_base()
-st.title("Painel 2 — Amostra")
-pergunta(f"A amostra de {inteiro(len(amostra))} contratos sorteados se parece com a população?")
-st.markdown(
+cabecalho(
+    "Painel 2 · Amostra",
+    f"A amostra de {inteiro(len(amostra))} contratos sorteados se parece com a população?",
     f"Os **{inteiro(len(amostra))} contratos** sorteados (amostra aleatória simples, semente "
     f"{meta['semente']}), com os mesmos gráficos do Painel 1, nas mesmas escalas. Cada cartão mostra o valor "
     "da amostra e, abaixo, a diferença para a população; cada tabela traz a coluna **População** ao lado da "
-    "**Amostra**."
+    "**Amostra**.",
 )
 cartoes_descritivos(pop, amostra, "amostra")
 
@@ -79,7 +78,7 @@ rel_v, grupo_v, m_amo_v, m_pop_v = maior_val
 max_pop, max_amo = pop["valor_contratado"].max(), amostra["valor_contratado"].max()
 maior_sorteado = bool((amostra["valor_contratado"] == max_pop).any())
 
-st.markdown(
+COMPARACAO = (
     f"**A amostra se parece com a população?** Na contagem de contratos e nas condições, sim: nas "
     f"proporções por região ela fica a no máximo {br(100 * dif_reg.max(), 1)} ponto percentual da "
     f"população ({NOME_REGIAO[regiao_max]}), e médias, medianas e quartis de spread e prazo andam juntos; entre essas "
@@ -94,6 +93,15 @@ st.markdown(
     rf"maior contrato é de R\$ {br(max_amo / 1e9, 1)} bilhões. Por isso a leitura por valor (limitação 1 "
     "do Painel 3) é muito mais ruidosa numa amostra de contratos do que a leitura por contagem."
 )
+# A resposta curta fica à vista, como título; o parágrafo inteiro, com os números, desce para um expansor.
+with bloco(
+    "Na contagem de contratos e nas condições, a amostra se parece com a população; no valor contratado, bem menos.",
+    f"Por região, a amostra fica a no máximo {br(100 * dif_reg.max(), 1)} ponto percentual da população na "
+    f"contagem, e a até {br(100 * dif_val.max(), 1)} pontos no valor.",
+    secao="A amostra se parece com a população?",
+):
+    with st.expander("Ver a comparação por extenso"):
+        st.markdown(COMPARACAO)
 
 nivel = seletor_nivel("amostra")
 painel_descritivo(pop, amostra, "amostra", carregar_ibge(), carregar_malhas(), nivel)

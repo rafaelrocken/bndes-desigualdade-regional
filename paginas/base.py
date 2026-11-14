@@ -13,6 +13,7 @@ import streamlit as st  # noqa: E402
 import calculo as c  # noqa: E402
 from dados_app import carregar, carregar_ibge  # noqa: E402
 from tela import (  # noqa: E402
+    TITULO_APP,
     br,
     cabecalho,
     cartoes,
@@ -45,41 +46,45 @@ def em_latex(numero: str) -> str:
     return numero.replace(",", "{,}")
 
 
-cabecalho()
-st.title("Base de dados e amostra")
 p0_pib, p0_pop = (h["p0_ou_delta0"] for h in c.HIPOTESES[:2])
-with st.container(border=True):
-    st.markdown(
-        "O BNDES diz trabalhar pela redução das desigualdades regionais. Este trabalho mede essa promessa nos "
-        f"**{inteiro(N)} contratos** do próprio banco, com três réguas:"
-    )
-    reguas = [
-        (":material/account_balance:", "Régua do PIB",
-         f"O Norte e o Nordeste recebem a sua parte na economia, **{pct(p0_pib)}** dos contratos?", "Teste H1"),
-        (":material/groups:", "Régua da população",
-         f"O Norte e o Nordeste recebem a sua parte nas pessoas, **{pct(p0_pop)}** dos contratos?", "Teste H2"),
-        (":material/percent:", "Régua das condições",
-         "O Norte e o Nordeste pagam um spread menor e têm prazo maior que as demais regiões?", "Testes H3, H4 e H5"),
-    ]
-    for coluna, (icone, nome, texto, teste) in zip(st.columns(3, gap="medium"), reguas):
-        with coluna.container(border=True):
-            st.markdown(f"{icone} **{nome}**  \n{texto}")
-            st.caption(teste)
-    st.markdown(
-        "Este app responde em **quatro partes**: esta página apresenta a base de dados e o sorteio da amostra; "
-        "o **Painel 1** descreve a população inteira; o **Painel 2** descreve a amostra, ao lado da população; e "
-        "o **Painel 3** testa as cinco hipóteses só com a amostra e confere o resultado na população."
-    )
-    for coluna, (caminho, rotulo, icone) in zip(st.columns(3, gap="medium"), PAINEIS):
-        with coluna.container(border=True):  # a borda faz do link um botão largo, fácil de achar
-            link_pagina(caminho, rotulo, icone)
+cabecalho(
+    "Base de dados e amostra",
+    TITULO_APP,
+    "O BNDES diz trabalhar pela redução das desigualdades regionais. Este trabalho mede essa promessa nos "
+    f"**{inteiro(N)} contratos** do próprio banco, com três réguas:",
+)
+# Os três cartões das réguas, no desenho dos cartões de indicador: o nome, a referência em
+# número grande, a pergunta e o teste que a responde.
+cartoes([
+    {"rotulo": "Régua do PIB", "valor": pct(p0_pib),
+     "sub": f"O Norte e o Nordeste recebem a sua parte na economia, **{pct(p0_pib)}** dos contratos?",
+     "notas": [{"texto": "Teste H1", "tom": "neutro", "sobe": True}]},
+    {"rotulo": "Régua da população", "valor": pct(p0_pop),
+     "sub": f"O Norte e o Nordeste recebem a sua parte nas pessoas, **{pct(p0_pop)}** dos contratos?",
+     "notas": [{"texto": "Teste H2", "tom": "neutro", "sobe": True}]},
+    {"rotulo": "Régua das condições", "valor": "spread menor, prazo maior", "valor_texto": True,
+     "sub": "O Norte e o Nordeste pagam um spread menor e têm prazo maior que as demais regiões?",
+     "notas": [{"texto": "Testes H3, H4 e H5", "tom": "neutro", "sobe": True}]},
+])
+st.markdown(
+    "Este app responde em **quatro partes**: esta página apresenta a base de dados e o sorteio da amostra; "
+    "o **Painel 1** descreve a população inteira; o **Painel 2** descreve a amostra, ao lado da população; e "
+    "o **Painel 3** testa as cinco hipóteses só com a amostra e confere o resultado na população."
+)
+for coluna, (caminho, rotulo, icone) in zip(st.columns(3, gap="medium"), PAINEIS):
+    with coluna.container(border=True):  # a borda faz do link um botão largo, fácil de achar
+        link_pagina(caminho, rotulo, icone)
 cartoes([
     {"rotulo": "Contratos na população (N)", "valor": inteiro(N),
+     "sub": "reembolsáveis, com UF definida, de 2002 a 2025",
      "ajuda": "Contratos reembolsáveis, com UF definida, de 2002 a 2025."},
-    {"rotulo": "Contratos na amostra (n)", "valor": inteiro(n), "ajuda": "Amostra aleatória simples, sem reposição."},
+    {"rotulo": "Contratos na amostra (n)", "valor": inteiro(n), "sub": "amostra aleatória simples, sem reposição",
+     "ajuda": "Amostra aleatória simples, sem reposição."},
     {"rotulo": "Linhas da base original", "valor": inteiro(meta["linhas_base"]),
+     "sub": "uma por subcrédito, antes de agregar em contratos",
      "ajuda": "Uma linha por subcrédito, antes de agregar em contratos."},
-    {"rotulo": "Variáveis da base original", "valor": inteiro(meta["colunas_base"]), "ajuda": "Colunas do arquivo do BNDES."},
+    {"rotulo": "Variáveis da base original", "valor": inteiro(meta["colunas_base"]),
+     "sub": "colunas do arquivo do BNDES", "ajuda": "Colunas do arquivo do BNDES."},
 ])
 st.markdown(
     "O BNDES declara, na sua missão e nas Diretrizes Estratégicas 2026–2030, que trabalha pela "
