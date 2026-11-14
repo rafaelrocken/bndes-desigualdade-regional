@@ -4,7 +4,7 @@ Trabalho final de Probabilidade e Estatística para IA (IA003), da Especializaç
 
 > **Aviso.** Trabalho acadêmico independente, feito com dados abertos. Sem vínculo com o BNDES nem com o IBGE, e sem endosso deles.
 
-Aplicativo: [URL_DO_APP](URL_DO_APP)
+Aplicativo: [https://bndes-desigualdade-regional.streamlit.app](https://bndes-desigualdade-regional.streamlit.app)
 
 ## A pergunta
 
@@ -36,10 +36,10 @@ O aplicativo abre na página "Base de dados e amostra", na raiz do endereço. Ca
 
 | Página | Endereço | O que traz |
 |---|---|---|
-| Base de dados e amostra | [URL_DO_APP](URL_DO_APP) | as três réguas, a base de dados, a população, o tamanho da amostra e o sorteio |
-| Painel 1, população | [URL_DO_APP/populacao](URL_DO_APP/populacao) | onde estão os contratos, as condições (spread e prazo) e a qualidade dos dados, por região ou por estado |
-| Painel 2, amostra | [URL_DO_APP/amostra](URL_DO_APP/amostra) | as mesmas figuras para a amostra, ao lado da população |
-| Painel 3, inferência | [URL_DO_APP/inferencia](URL_DO_APP/inferencia) | intervalos de confiança, testes H1 a H5, comparação com a população, variabilidade em 1.000 sorteios e limitações |
+| Base de dados e amostra | [https://bndes-desigualdade-regional.streamlit.app](https://bndes-desigualdade-regional.streamlit.app) | as três réguas, a base de dados, a população, o tamanho da amostra e o sorteio |
+| Painel 1, população | [https://bndes-desigualdade-regional.streamlit.app/populacao](https://bndes-desigualdade-regional.streamlit.app/populacao) | onde estão os contratos, as condições (spread e prazo) e a qualidade dos dados, por região ou por estado |
+| Painel 2, amostra | [https://bndes-desigualdade-regional.streamlit.app/amostra](https://bndes-desigualdade-regional.streamlit.app/amostra) | as mesmas figuras para a amostra, ao lado da população |
+| Painel 3, inferência | [https://bndes-desigualdade-regional.streamlit.app/inferencia](https://bndes-desigualdade-regional.streamlit.app/inferencia) | intervalos de confiança, testes H1 a H5, comparação com a população, variabilidade em 1.000 sorteios e limitações |
 
 Nos Painéis 1 e 2, o seletor "Ver por" alterna entre região e estado.
 
