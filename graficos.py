@@ -61,9 +61,11 @@ FONTE_IBGE = "IBGE: PIB das Contas Regionais 2023 e população do Censo 2022 (S
 # Limiares do mapa (proporção dos contratos). São constantes: a escala de cor do mapa é
 # a mesma nos Painéis 1 e 2, e no modo Região e no modo Estado, por construção.
 LIMIARES_MAPA: list[float] = [0.01, 0.02, 0.05, 0.10, 0.20, 0.40]
-# Rampa sequencial de um só matiz (roxo), clara -> escura, uma cor por classe. Fica fora
-# do azul e do vermelhão para o mapa não sugerir grupo onde a cor mede tamanho.
-RAMPA_MAPA: list[str] = ["#f2f0f7", "#dadaeb", "#bcbddc", "#9e9ac8", "#807dba", "#6a51a3", "#4a1486"]
+# Rampa sequencial de um só matiz (azul-ardósia, pouco saturado), clara -> escura, uma cor por
+# classe, até #1f3550, perto da cor primária do tema (#3B4B63): casa com a tela. Fica longe do
+# azul saturado do grupo "Demais regiões" (#0072B2) e do vermelhão do Norte e Nordeste, para o
+# mapa não sugerir grupo onde a cor mede tamanho.
+RAMPA_MAPA: list[str] = ["#eef1f5", "#d4dbe5", "#b3bfcf", "#8d9db4", "#677c98", "#43597a", "#1f3550"]
 
 # Cores das réguas: os contratos levam a cor do grupo; PIB e população, dois cinzas.
 _CINZA_PIB = "#7b7b7b"
