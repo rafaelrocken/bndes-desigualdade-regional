@@ -8,6 +8,8 @@ cada medida. Toda escala que depende dos dados (o fim dos eixos, o eixo vertical
 histogramas) é calculada aqui com a população e a amostra juntas, e o mapa usa
 limiares fixos; por isso a mesma escala sai nos dois painéis por construção.
 """
+import re
+from html import escape
 from pathlib import Path
 
 import numpy as np
@@ -142,29 +144,123 @@ def numeros(*tabelas: pd.DataFrame, rotulo: str = "Ver os números", aberto: boo
             tabela(df)
 
 
-def pergunta(texto: str) -> None:
-    """A pergunta que a página responde, em uma frase, logo abaixo do título."""
-    st.markdown(f"#### {texto}")
+def html_inline(texto: str) -> str:
+    """Texto curto (com `**negrito**` do markdown) pronto para entrar num pedaço de HTML: escapa
+    `<`, `>` e `&`, troca `**x**` por `<strong>x</strong>` e o cifrão por entidade, para o
+    markdown do Streamlit não ler `$` como fórmula."""
+    texto = escape(texto, quote=False).replace("\\$", "$").replace("$", "&#36;")
+    return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", texto)
+
+
+def _html(trecho: str, onde=None) -> None:
+    """Desenha um pedaço de HTML (em `onde`, ou na página). Vai por `st.markdown` para o texto
+    continuar legível pelos testes; o Streamlit descarta SVG, então tudo é HTML e CSS."""
+    (onde or st).markdown(trecho, unsafe_allow_html=True)
+
+
+# --- Cartões de indicador (no estilo do dashboard da IA001) ---------------------------
+#
+# Cor das notas: verde (`bom`) só quando o resultado favorece a promessa do BNDES ao Norte e
+# Nordeste; vermelho (`crit`) quando a contraria por mais do que o limiar (1 p.p. nas
+# proporções e no spread); cinza (`neutro`) no resto. A seta (▲ acima, ▼ abaixo) só aparece
+# nas notas coloridas.
+
+LIMIAR_PROPORCAO = 0.01  # 1 ponto percentual, em proporção
+LIMIAR_SPREAD = 1.0  # 1 ponto percentual de spread (% a.a.)
+QUASE_IGUAL = 0.05  # "praticamente igual": menos de 5% da média das demais regiões (o critério da leitura)
+
+
+def tom_nota(dif: float, sentido: int, igual: float = 0.0, limiar: float = LIMIAR_PROPORCAO) -> str:
+    """"bom", "crit" ou "neutro" para uma diferença `dif` (Norte e Nordeste − referência).
+
+    `sentido` = +1 quando mais favorece a promessa (proporção, prazo) e −1 quando menos favorece
+    (spread). Até `igual` (em módulo) a diferença é "praticamente igual" e fica neutra."""
+    if abs(dif) <= igual:
+        return "neutro"
+    if dif * sentido > 0:
+        return "bom"
+    return "crit" if abs(dif) > limiar else "neutro"
+
+
+def nota_regua(valor: float, regua: float, nome: str) -> dict:
+    """Nota de um cartão de proporção contra uma régua: "▼ 16,3 p.p. abaixo da régua da
+    população (35,4%)"."""
+    dif = valor - regua
+    return {
+        "texto": f"{br(100 * abs(dif), 1)} p.p. {'acima' if dif >= 0 else 'abaixo'} da régua {nome} ({pct(regua)})",
+        "tom": tom_nota(dif, +1),
+        "sobe": dif >= 0,
+    }
+
+
+def nota_condicao(dif: float, media_demais: float, sentido: int, promessa: str, limiar: float) -> dict:
+    """Nota de um cartão de diferença de médias (spread, prazo) contra a promessa da política
+    regional (`promessa`, ex.: "um spread menor"). Abaixo de 5% da média das demais regiões, a
+    diferença é "praticamente igual"."""
+    igual = QUASE_IGUAL * abs(media_demais)
+    tom = tom_nota(dif, sentido, igual, limiar)
+    lado = "maior" if dif > 0 else "menor"
+    if abs(dif) <= igual:
+        texto = f"praticamente igual; a promessa era {promessa}"
+    elif tom == "bom":
+        texto = f"{lado} em Norte e Nordeste, como promete a política regional"
+    else:
+        texto = f"{lado} em Norte e Nordeste; a promessa era {promessa}"
+    return {"texto": texto, "tom": tom, "sobe": dif > 0}
+
+
+def medidor_html(valor: float, marcas: list[tuple[float, str]], teto: float, cor: str | None = None) -> str:
+    """Barra do valor (0 a `teto`) com um traço em cada referência de `marcas` [(valor, rótulo)],
+    e o rótulo de cada traço embaixo. Só HTML e CSS."""
+    def pos(x: float) -> str:
+        return f"{100 * min(max(x / teto, 0), 1):.1f}%"
+
+    descricao = f"{pct(valor)} frente a " + " e ".join(f"{pct(m)} ({r})" for m, r in marcas)
+    estilo_cor = f";background:{cor}" if cor else ""
+    tracos = "".join(f'<span class="marca" style="left:{pos(m)}" title="{escape(r)}: {pct(m)}"></span>'
+                     for m, r in marcas)
+    rotulos = "".join(f'<span style="left:{pos(m)}">{escape(r)}</span>' for m, r in marcas)
+    return (f'<div class="medidor" role="img" aria-label="{escape(descricao)}">'
+            f'<span class="cheio" style="width:{pos(valor)}{estilo_cor}"></span>{tracos}</div>'
+            f'<div class="medidor-rotulos" aria-hidden="true">{rotulos}</div>')
+
+
+def nota_html(nota: dict) -> str:
+    seta = ""
+    if nota["tom"] != "neutro":
+        seta = f'<span aria-hidden="true">{"▲" if nota["sobe"] else "▼"}</span> '
+    return f'<p class="k-nota {nota["tom"]}">{seta}{html_inline(nota["texto"])}</p>'
+
+
+def cartao_html(item: dict) -> str:
+    """Um cartão: rótulo (com a ajuda no `title`), número grande, linhas cinzas (`sub`),
+    medidor opcional e notas coloridas."""
+    ajuda = item.get("ajuda")
+    icone = (f' <span class="k-ajuda" title="{escape(ajuda, quote=True)}" aria-label="{escape(ajuda, quote=True)}">?</span>'
+             if ajuda else "")
+    subs = item.get("sub") or []
+    subs = [subs] if isinstance(subs, str) else subs
+    partes = [
+        f'<p class="k-rot">{html_inline(item["rotulo"])}{icone}</p>',
+        f'<p class="k-val{" k-val-texto" if item.get("valor_texto") else ""}">{html_inline(item["valor"])}</p>',
+        *(f'<p class="k-sub">{html_inline(s)}</p>' for s in subs),
+    ]
+    if item.get("medidor"):
+        partes.append(medidor_html(**item["medidor"]))
+    partes += [nota_html(n) for n in item.get("notas", [])]
+    titulo = f' title="{escape(ajuda, quote=True)}"' if ajuda else ""
+    return f'<div class="kpi"{titulo}>{"".join(partes)}</div>'
+
+
+def cartoes_html(itens: list[dict]) -> str:
+    return f'<div class="kpis" style="--colunas:{len(itens)}">{"".join(cartao_html(i) for i in itens)}</div>'
 
 
 def cartoes(itens: list[dict]) -> None:
-    """Uma linha de números grandes (`st.metric`). Cada item: `rotulo`, `valor`, e
-    opcionalmente `delta` (texto, já com o sinal) e `ajuda`.
-
-    O delta sai em cinza e sem seta: aqui ele mede distância (amostra − população), e
-    subir ou descer não é bom nem ruim.
-    """
-    for coluna, item in zip(st.columns(len(itens)), itens):
-        with coluna:
-            st.metric(
-                item["rotulo"],
-                item["valor"],
-                delta=item.get("delta"),
-                delta_color="off",
-                delta_arrow="off",
-                help=item.get("ajuda"),
-                border=True,
-            )
+    """Uma linha de cartões de indicador. Cada item: `rotulo`, `valor` e, opcionais, `sub`
+    (linha ou lista de linhas cinzas), `medidor` (argumentos de `medidor_html`), `notas`
+    (de `nota_regua`/`nota_condicao`), `ajuda` (o texto de ajuda, no `title`)."""
+    _html(cartoes_html(itens))
 
 
 def abas(opcoes: dict[str, str]):
@@ -188,12 +284,22 @@ def link_pagina(caminho: str, rotulo: str, icone: str | None = None) -> None:
         st.caption(rotulo)
 
 
-def bloco(titulo: str | None = None):
+def bloco(titulo: str | None = None, subtitulo: str | None = None, secao: str | None = None):
     """Caixa com borda que agrupa uma pergunta com o seu gráfico e os seus números.
-    Uso: `with bloco("Título"):`."""
+
+    No estilo da IA001: `titulo` é a conclusão do bloco, em negrito forte; `subtitulo`, a
+    leitura curta em cinza; `secao`, o nome do bloco numa linha pequena acima.
+    Uso: `with bloco("Conclusão", "Como ler o gráfico", secao="Nome"):`."""
     caixa = st.container(border=True)
+    partes = []
+    if secao:
+        partes.append(f'<p class="e-secao">{html_inline(secao)}</p>')
     if titulo:
-        caixa.subheader(titulo)
+        partes.append(f'<p class="e-tit" role="heading" aria-level="3">{html_inline(titulo.replace("**", ""))}</p>')
+    if subtitulo:
+        partes.append(f'<p class="e-sub">{html_inline(subtitulo)}</p>')
+    if partes:
+        _html(f'<div class="e-painel">{"".join(partes)}</div>', caixa)
     return caixa
 
 
@@ -220,15 +326,92 @@ def _logo(nome: str) -> str:
     return str(ASSETS / nome)
 
 
-def cabecalho() -> None:
-    """Cabeçalho comum: o logo da UFRGS no canto (`st.logo`) e, numa faixa com borda, o
-    logo da UFRGS, a pergunta do trabalho e a autoria."""
+# O estilo da tela, comum a todas as páginas e injetado por `cabecalho()`. Vem do dashboard da
+# IA001: a fonte Archivo (Google Fonts, por CSS: nenhuma dependência nova), títulos fortes e
+# condensados, cartões com número grande, medidor e nota colorida. As cores são as da IA001,
+# com o azul trocado pelo azul-ardósia do tema (`primaryColor`), porque o azul aqui é a cor do
+# grupo "Demais regiões" nos gráficos. Os seletores levam `.stApp` na frente para vencer os
+# estilos do próprio Streamlit.
+CSS = r"""<style>
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&display=swap');
+:root{--tinta:#0f2238;--tinta2:#42526a;--apagado:#6b7686;--fio:#dfe4ea;--ardosia:#3B4B63;
+  --nne:#D55E00;--trilho:#e3e7ec;--cartao:#f3f5f8;--bom:#0b6b0b;--crit:#b3261e}
+.stApp, .stApp p, .stApp li, .stApp label, .stApp td, .stApp th, .stApp h1, .stApp h2, .stApp h3,
+.stApp h4, .stApp h5, .stApp h6, .stApp summary, button[data-baseweb="tab"] p{
+  font-family:"Archivo",system-ui,"Segoe UI",sans-serif}
+.stApp{color:var(--tinta)}
+[data-testid="stMainBlockContainer"]{padding-top:4.2rem}
+.stApp h2, .stApp h3{font-weight:750;font-stretch:84%;letter-spacing:0}
+.stTabs [data-baseweb="tab-list"]{gap:22px}
+button[data-baseweb="tab"] p{font-size:1rem;font-weight:600}
+/* cabeçalho de página */
+.stApp .e-topo{margin:0 0 .2rem}
+.stApp .e-sobre{font-size:.78rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--apagado);margin:0 0 .3rem}
+.stApp .e-titulo{font-size:2rem;font-weight:800;font-stretch:80%;line-height:1.08;color:var(--tinta);margin:0}
+.stApp .e-contexto{font-size:.98rem;color:var(--tinta2);margin:.5em 0 0;line-height:1.45}
+.stApp .e-contexto strong{color:var(--tinta)}
+.stApp .e-autoria{font-size:.78rem;color:var(--apagado);margin:.55em 0 0}
+/* cartões de indicador */
+.stApp .kpis{display:grid;grid-template-columns:repeat(var(--colunas,4),minmax(0,1fr));gap:14px;margin:6px 0 10px}
+.stApp .kpi{background:var(--cartao);border-radius:10px;padding:14px 16px 12px}
+.stApp .k-rot{font-size:.86rem;color:var(--tinta2);margin:0;font-weight:550;line-height:1.3}
+.stApp .k-ajuda{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
+  border:1px solid var(--apagado);border-radius:50%;font-size:.66rem;color:var(--apagado);cursor:help;
+  vertical-align:1px;margin-left:3px}
+.stApp .k-val{font-size:2.15rem;font-weight:800;font-stretch:78%;margin:.08em 0 .05em;line-height:1.05;color:var(--tinta)}
+.stApp .k-val.k-val-texto{font-size:1.35rem;margin:.2em 0 .15em}
+.stApp .k-sub{font-size:.84rem;color:var(--tinta2);margin:.15em 0 0;line-height:1.3}
+.stApp .k-nota{font-size:.84rem;color:var(--tinta2);margin:.4em 0 0;line-height:1.3}
+.stApp .k-nota.bom{color:var(--bom);font-weight:600}
+.stApp .k-nota.crit{color:var(--crit);font-weight:600}
+.stApp .medidor{position:relative;height:8px;border-radius:99px;background:var(--trilho);margin-top:9px}
+.stApp .medidor .cheio{position:absolute;left:0;top:0;bottom:0;border-radius:99px;background:var(--nne)}
+.stApp .medidor .marca{position:absolute;top:-5px;bottom:-5px;width:2.5px;margin-left:-1px;
+  background:var(--tinta);border-radius:2px}
+.stApp .medidor-rotulos{position:relative;height:1.05em;font-size:.7rem;color:var(--apagado);margin-top:4px}
+.stApp .medidor-rotulos span{position:absolute;transform:translateX(-50%);white-space:nowrap}
+@media (max-width:900px){.stApp .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:520px){.stApp .kpis{grid-template-columns:minmax(0,1fr)}}
+/* título de bloco que diz a conclusão */
+.stApp .e-secao{font-size:.74rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--apagado);margin:0 0 .25em}
+.stApp .e-tit{font-size:1.14rem;font-weight:700;font-stretch:82%;line-height:1.2;margin:0;color:var(--tinta)}
+.stApp .e-painel{margin-bottom:.5rem}
+.stApp .e-sub{font-size:.88rem;color:var(--apagado);margin:.3em 0 .1em;line-height:1.4}
+.stApp .e-sub strong{color:var(--tinta2)}
+/* placar dos cinco testes (Painel 3) */
+.stApp table.placar{width:100%;border-collapse:collapse;border:none;margin:2px 0 4px;font-size:.92rem}
+.stApp table.placar th{font-size:.78rem;font-weight:600;color:var(--apagado);text-align:left;padding:6px 10px;
+  border:none;border-bottom:1px solid var(--fio);background:none}
+.stApp table.placar td{padding:7px 10px;border:none;border-bottom:1px solid var(--fio);vertical-align:middle;
+  color:var(--tinta)}
+.stApp table.placar td.teste{font-weight:800;font-stretch:80%;font-size:1.05rem}
+.stApp .selo{display:inline-block;padding:2px 10px;border-radius:99px;font-size:.8rem;font-weight:650;white-space:nowrap}
+.stApp .selo.rejeita{background:var(--ardosia);color:#fff}
+.stApp .selo.nao-rejeita{background:#e3e7ec;color:var(--tinta2)}
+.stApp table.placar td.acertou{color:var(--bom);font-weight:600}
+.stApp table.placar td.errou{color:var(--crit);font-weight:600}
+.stApp table.placar td.inofensivo{color:var(--apagado);font-weight:600}
+.stApp .placar-titulo{font-size:1.14rem;font-weight:700;font-stretch:82%;margin:.4em 0 0;color:var(--tinta)}
+</style>"""
+
+
+def cabecalho(sobretitulo: str, titulo: str, contexto: str | None = None) -> None:
+    """Cabeçalho comum, no estilo da IA001: o logo da UFRGS uma vez, no canto da barra de
+    navegação (`st.logo`); o estilo da tela (`CSS`); e, sem caixa, uma linha pequena com o
+    nome da página (`sobretitulo`), o título forte com a pergunta da página, uma linha cinza
+    de contexto e a autoria, discreta."""
     st.logo(_logo("ufrgs.svg"), size="large", link="https://www.ufrgs.br/")
-    with st.container(border=True):
-        ufrgs, texto = st.columns([0.7, 9], vertical_alignment="center", gap="medium")
-        ufrgs.image(_logo("ufrgs.svg"), width=64)
-        texto.markdown(f"**{TITULO_APP}**")
-        texto.caption(AUTORIA)
+    st.html(CSS)
+    partes = [
+        f'<p class="e-sobre">{html_inline(sobretitulo)}</p>',
+        f'<p class="e-titulo" role="heading" aria-level="1">{html_inline(titulo)}</p>',
+    ]
+    if contexto:
+        partes.append(f'<p class="e-contexto">{html_inline(contexto)}</p>')
+    partes.append(f'<p class="e-autoria">{html_inline(AUTORIA)}</p>')
+    _html(f'<header class="e-topo">{"".join(partes)}</header>')
 
 
 def rodape() -> None:
@@ -420,6 +603,8 @@ def tabela_qualidade(pop: pd.DataFrame, amostra: pd.DataFrame | None) -> pd.Data
 # --- Os cartões dos Painéis 1 e 2 ----------------------------------------------------
 
 def _indicadores(df: pd.DataFrame) -> dict[str, float]:
+    """Os números dos cartões: as duas proporções do Norte e Nordeste (contratos e valor), as
+    diferenças de média de spread e de prazo (Norte e Nordeste − demais) e as médias de cada grupo."""
     nne = df["grupo"] == "N+NE"
     media = df.groupby("grupo")[["spread", "prazo_amortizacao"]].mean()
     return {
@@ -427,46 +612,81 @@ def _indicadores(df: pd.DataFrame) -> dict[str, float]:
         "valor": float(df.loc[nne, "valor_contratado"].sum() / df["valor_contratado"].sum()),
         "spread": float(media.loc["N+NE", "spread"] - media.loc["Demais", "spread"]),
         "prazo": float(media.loc["N+NE", "prazo_amortizacao"] - media.loc["Demais", "prazo_amortizacao"]),
+        "spread_nne": float(media.loc["N+NE", "spread"]),
+        "spread_demais": float(media.loc["Demais", "spread"]),
+        "prazo_nne": float(media.loc["N+NE", "prazo_amortizacao"]),
+        "prazo_demais": float(media.loc["Demais", "prazo_amortizacao"]),
     }
 
 
-def cartoes_descritivos(pop: pd.DataFrame, amostra: pd.DataFrame, qual: str) -> None:
-    """Os quatro números grandes dos Painéis 1 e 2. No Painel 2, o valor é o da amostra e o
-    delta é a diferença para a população."""
+def itens_descritivos(pop: pd.DataFrame, amostra: pd.DataFrame, qual: str) -> list[dict]:
+    """Os quatro cartões dos Painéis 1 e 2 (ver `cartoes`). As duas proporções levam o medidor
+    contra as réguas de H1 (PIB) e de H2 (população) e uma nota por régua; spread e prazo levam as
+    duas médias e uma nota contra a promessa da política regional. No Painel 2 (`qual="amostra"`)
+    o valor é o da amostra, e a linha logo abaixo dele diz a diferença para a população."""
     ind_pop, ind_amo = _indicadores(pop), _indicadores(amostra)
     ind = ind_amo if qual == "amostra" else ind_pop
+    p0_pib, p0_pop = (h["p0_ou_delta0"] for h in c.HIPOTESES[:2])
+    reguas = [(p0_pib, "PIB"), (p0_pop, "população")]
+    # O mesmo fim de barra nos dois painéis e nos dois cartões de proporção.
+    teto = 1.25 * max(p0_pib, p0_pop, *(i[k] for i in (ind_pop, ind_amo) for k in ("contratos", "valor")))
 
-    def delta(chave: str, casas: int, unidade: str, escala: float = 1.0) -> str | None:
+    def delta(chave: str, casas: int, unidade: str, escala: float = 1.0) -> list[str]:
         if qual != "amostra":
-            return None
-        return f"{com_sinal(escala * (ind_amo[chave] - ind_pop[chave]), casas)} {unidade} da população"
+            return []
+        return [f"{com_sinal(escala * (ind_amo[chave] - ind_pop[chave]), casas)} {unidade} da população"]
 
-    cartoes([
+    def proporcao(chave: str) -> dict:
+        return {
+            "medidor": {"valor": ind[chave], "marcas": reguas, "teto": teto},
+            "notas": [nota_regua(ind[chave], p0_pop, "da população"), nota_regua(ind[chave], p0_pib, "do PIB")],
+        }
+
+    return [
         {"rotulo": "Contratos em Norte e Nordeste", "valor": pct(ind["contratos"], 1),
-         "delta": delta("contratos", 1, "p.p.", 100),
+         "sub": delta("contratos", 1, "p.p.", 100), **proporcao("contratos"),
          "ajuda": "Proporção dos contratos cuja UF principal fica no Norte ou no Nordeste. É o π de H1 e H2."},
         {"rotulo": "Valor contratado em Norte e Nordeste", "valor": pct(ind["valor"], 1),
-         "delta": delta("valor", 1, "p.p.", 100),
+         "sub": delta("valor", 1, "p.p.", 100), **proporcao("valor"),
          "ajuda": "A mesma proporção, mas somando reais em vez de contar contratos."},
         {"rotulo": "Spread: Norte e Nordeste − demais", "valor": f"{com_sinal(ind['spread'], 2)} p.p.",
-         "delta": delta("spread", 2, "p.p."),
+         "sub": delta("spread", 2, "p.p.")
+         + [f"médias: {br(ind['spread_nne'], 2)} contra {br(ind['spread_demais'], 2)} % a.a."],
+         "notas": [nota_condicao(ind["spread"], ind["spread_demais"], -1, "um spread menor", LIMIAR_SPREAD)],
          "ajuda": "Diferença entre os spreads médios (% ao ano). Negativo: Norte e Nordeste pagam menos. É o δ de H3 e H4."},
         {"rotulo": "Prazo: Norte e Nordeste − demais", "valor": f"{com_sinal(ind['prazo'], 1)} meses",
-         "delta": delta("prazo", 1, "meses"),
+         "sub": delta("prazo", 1, "meses")
+         + [f"médias: {br(ind['prazo_nne'], 1)} contra {br(ind['prazo_demais'], 1)} meses"],
+         "notas": [nota_condicao(ind["prazo"], ind["prazo_demais"], +1, "um prazo maior",
+                                 QUASE_IGUAL * abs(ind["prazo_demais"]))],
          "ajuda": "Diferença entre os prazos médios de amortização. Positivo: Norte e Nordeste têm mais prazo. É o parâmetro de H5."},
-    ])
+    ]
+
+
+def cartoes_descritivos(pop: pd.DataFrame, amostra: pd.DataFrame, qual: str) -> None:
+    """Os quatro cartões dos Painéis 1 e 2 (`itens_descritivos`)."""
+    cartoes(itens_descritivos(pop, amostra, qual))
 
 
 # --- O painel descritivo -------------------------------------------------------------
 
-def _leitura(texto: str) -> None:
-    """O texto de leitura de um gráfico: uma ou duas frases, logo acima dele."""
-    st.markdown(texto)
-
-
 def _unidade_maior(resumo: pd.DataFrame, campo: str, grupo: str | None = None) -> pd.Series:
     base = resumo if grupo is None else resumo[resumo["grupo"] == grupo]
     return base.sort_values(campo, ascending=False, kind="stable").iloc[0]
+
+
+def titulo_onde(resumo: pd.DataFrame, unid: pd.DataFrame, nivel: str) -> str:
+    """O título do bloco "Onde estão os contratos": a conclusão do mapa e do ranking, calculada
+    do `resumo` (`graficos.por_unidade`) no nível pedido."""
+    maior = _unidade_maior(resumo, "participacao")
+    nne = resumo.loc[resumo["grupo"] == "N+NE", "participacao"].sum()
+    if nivel == "regiao":
+        return (f"O **{maior['nome']}** concentra **{pct(maior['participacao'])} dos contratos**; "
+                f"Norte e Nordeste juntos ficam com **{pct(nne)}**.")
+    n_nne = int((unid["grupo"] == "N+NE").sum())
+    comparacao = "mais" if maior["participacao"] > nne else "menos"
+    return (f"Só **{maior['nome']}** tem **{pct(maior['participacao'])} dos contratos**, {comparacao} "
+            f"que os {n_nne} estados do Norte e do Nordeste juntos (**{pct(nne)}**).")
 
 
 def painel_descritivo(pop: pd.DataFrame, amostra: pd.DataFrame, qual: str, ibge: pd.DataFrame,
@@ -517,18 +737,9 @@ def painel_descritivo(pop: pd.DataFrame, amostra: pd.DataFrame, qual: str, ibge:
 
     # ---------------------------------------------------------------- Onde estão
     with aba_onde:
-        with bloco():
-            maior = _unidade_maior(resumo, "participacao")
-            nne = resumo.loc[resumo["grupo"] == "N+NE", "participacao"].sum()
-            n_nne = int((unid["grupo"] == "N+NE").sum())
-            if nivel == "regiao":
-                frase = (f"O **{maior['nome']}** concentra **{pct(maior['participacao'])} dos contratos**; "
-                         f"Norte e Nordeste juntos ficam com **{pct(nne)}**.")
-            else:
-                comparacao = "mais" if maior["participacao"] > nne else "menos"
-                frase = (f"Só **{maior['nome']}** tem **{pct(maior['participacao'])} dos contratos**, {comparacao} "
-                         f"que os {n_nne} estados do Norte e do Nordeste juntos (**{pct(nne)}**).")
-            _leitura(frase + " Quanto mais escuro no mapa, maior a parte dos contratos; o ranking ao lado dá o número.")
+        nne = resumo.loc[resumo["grupo"] == "N+NE", "participacao"].sum()
+        with bloco(titulo_onde(resumo, unid, nivel),
+                   "Quanto mais escuro no mapa, maior a parte dos contratos; o ranking ao lado dá o número."):
             esquerda, direita = st.columns([1, 1.15], gap="medium")
             with esquerda:
                 grafico(g.mapa(df, unid, nivel, malha, f"% dos contratos {por_onde}", legenda=(base,)))
@@ -545,34 +756,35 @@ def painel_descritivo(pop: pd.DataFrame, amostra: pd.DataFrame, qual: str, ibge:
                 aberto=True,
             )
 
-        with bloco("Três réguas: contratos, PIB e população"):
-            destaque = _unidade_maior(resumo, "participacao", "N+NE")
-            p0_pib, p0_pop = (h["p0_ou_delta0"] for h in c.HIPOTESES[:2])
-            soma_pop_exata = float(unid.loc[unid["grupo"] == "N+NE", "parte_populacao"].sum())
-            _leitura(
-                f"**{destaque['nome']}: {pct(destaque['participacao'])} dos contratos, {pct(destaque['parte_pib'])} do PIB, "
-                f"{pct(destaque['parte_populacao'])} da população.** Norte e Nordeste juntos têm {pct(nne)} dos contratos, "
-                f"a {br(100 * abs(nne - p0_pib), 1)} ponto percentual da sua parte no PIB ({pct(p0_pib)}, régua de H1) "
-                f"e a {br(100 * abs(nne - p0_pop), 1)} pontos da sua parte na população ({pct(p0_pop)}, régua de H2; "
-                f"o pré-registro somou as partes já arredondadas, e a soma exata no IBGE dá {pct(soma_pop_exata, 2)})."
-                + (f" A primeira linha do gráfico, {g.NOME_SOMA_NNE}, põe essa comparação lado a lado."
-                   if nivel == "regiao" else "")
-            )
+        destaque = _unidade_maior(resumo, "participacao", "N+NE")
+        p0_pib, p0_pop = (h["p0_ou_delta0"] for h in c.HIPOTESES[:2])
+        soma_pop_exata = float(unid.loc[unid["grupo"] == "N+NE", "parte_populacao"].sum())
+        with bloco(
+            f"{destaque['nome']}: {pct(destaque['participacao'])} dos contratos, {pct(destaque['parte_pib'])} do PIB, "
+            f"{pct(destaque['parte_populacao'])} da população.",
+            f"Norte e Nordeste juntos têm {pct(nne)} dos contratos, "
+            f"a {br(100 * abs(nne - p0_pib), 1)} ponto percentual da sua parte no PIB ({pct(p0_pib)}, régua de H1) "
+            f"e a {br(100 * abs(nne - p0_pop), 1)} pontos da sua parte na população ({pct(p0_pop)}, régua de H2; "
+            f"o pré-registro somou as partes já arredondadas, e a soma exata no IBGE dá {pct(soma_pop_exata, 2)})."
+            + (f" A primeira linha do gráfico, {g.NOME_SOMA_NNE}, põe essa comparação lado a lado."
+               if nivel == "regiao" else ""),
+            secao="Três réguas: contratos, PIB e população",
+        ):
             grafico(g.tres_reguas(df, unid, nivel, f"Contratos, PIB e população {por_onde}", max_x=max_reguas,
                                   legenda=(f"{base}. Ordem: % dos contratos, da maior para a menor.",),
                                   reguas_nne=(p0_pib, p0_pop)))
             numeros(tabela_unidades(pop, comparar, unid, nivel,
                                     [("participacao", "% dos contratos", lambda v: pct(v, 1))], reguas=True))
 
-        with bloco("E em valor contratado?"):
-            valor_nne = resumo.loc[resumo["grupo"] == "N+NE", "participacao_valor"].sum()
-            maior_ou_menor = "maiores" if valor_nne > nne else "menores"
-            _leitura(
-                f"Somando reais em vez de contar contratos, Norte e Nordeste ficam com **{pct(valor_nne)} do valor**, "
-                f"contra {pct(nne)} dos contratos: os contratos de lá são, em média, {maior_ou_menor}. Os testes contam "
-                r"contratos; o BNDES e o IBGE costumam falar em valor, e um contrato de R\$ 1 mil pesa como um de "
-                r"R\$ 10 bilhões na contagem."
-            )
+        valor_nne = resumo.loc[resumo["grupo"] == "N+NE", "participacao_valor"].sum()
+        maior_ou_menor = "maiores" if valor_nne > nne else "menores"
+        with bloco(
+            f"Somando reais em vez de contar contratos, Norte e Nordeste ficam com **{pct(valor_nne)} do valor**, "
+            f"contra {pct(nne)} dos contratos: os contratos de lá são, em média, {maior_ou_menor}.",
+            "Os testes contam contratos; o BNDES e o IBGE costumam falar em valor, e um contrato de R$ 1 mil pesa "
+            "como um de R$ 10 bilhões na contagem.",
+            secao="E em valor contratado?",
+        ):
             esquerda, direita = st.columns(2, gap="medium")
             with esquerda:
                 grafico(g.ranking(df, unid, nivel, f"% do valor contratado {por_onde}", max_x=max_valor, medida="valor",
@@ -589,19 +801,19 @@ def painel_descritivo(pop: pd.DataFrame, amostra: pd.DataFrame, qual: str, ibge:
 
     # ---------------------------------------------------------------- Condições
     with aba_condicoes:
-        with bloco():
-            medias = df.groupby("grupo")[["spread", "prazo_amortizacao"]].mean()
-            s_nne, s_dem = medias.loc["N+NE", "spread"], medias.loc["Demais", "spread"]
-            p_nne, p_dem = medias.loc["N+NE", "prazo_amortizacao"], medias.loc["Demais", "prazo_amortizacao"]
-            if abs(s_nne - s_dem) < 0.05 * s_dem:
-                sobre_spread = f"O spread médio é **quase igual** nos dois grupos ({br(s_nne, 2)} contra {br(s_dem, 2)} % a.a.)"
-            else:
-                sobre_spread = (f"O spread médio é **{'menor' if s_nne < s_dem else 'maior'}** em Norte e Nordeste "
-                                f"({br(s_nne, 2)} contra {br(s_dem, 2)} % a.a.)")
-            sobre_prazo = (f"o prazo médio de amortização é **{'maior' if p_nne > p_dem else 'menor'}** em Norte e Nordeste "
-                           f"({br(p_nne, 1)} contra {br(p_dem, 1)} meses)")
-            _leitura(f"{sobre_spread}; {sobre_prazo}. Abaixo, a média de cada {onde}, com o número de contratos (n) "
-                     "ao lado: com poucos contratos, a média oscila mais.")
+        medias = df.groupby("grupo")[["spread", "prazo_amortizacao"]].mean()
+        s_nne, s_dem = medias.loc["N+NE", "spread"], medias.loc["Demais", "spread"]
+        p_nne, p_dem = medias.loc["N+NE", "prazo_amortizacao"], medias.loc["Demais", "prazo_amortizacao"]
+        if abs(s_nne - s_dem) < QUASE_IGUAL * s_dem:
+            sobre_spread = f"O spread médio é **quase igual** nos dois grupos ({br(s_nne, 2)} contra {br(s_dem, 2)} % a.a.)"
+        else:
+            sobre_spread = (f"O spread médio é **{'menor' if s_nne < s_dem else 'maior'}** em Norte e Nordeste "
+                            f"({br(s_nne, 2)} contra {br(s_dem, 2)} % a.a.)")
+        sobre_prazo = (f"o prazo médio de amortização é **{'maior' if p_nne > p_dem else 'menor'}** em Norte e Nordeste "
+                       f"({br(p_nne, 1)} contra {br(p_dem, 1)} meses)")
+        with bloco(f"{sobre_spread}; {sobre_prazo}.",
+                   f"Abaixo, a média de cada {onde}, com o número de contratos (n) ao lado: com poucos contratos, "
+                   "a média oscila mais."):
             esquerda, direita = st.columns(2, gap="medium")
             with esquerda:
                 grafico(g.condicoes(df, unid, nivel, "spread", f"Spread médio {por_onde}", max_x=max_spread,
@@ -622,13 +834,14 @@ def painel_descritivo(pop: pd.DataFrame, amostra: pd.DataFrame, qual: str, ibge:
             ("prazo_amortizacao", "Prazo de amortização", "meses", 1, "Todos os contratos."),
         ]
         for coluna, titulo, unidade, casas, nota in variaveis:
-            with bloco(f"{titulo} por grupo: a distribuição inteira"):
-                mediana = df.groupby("grupo")[coluna].median()
-                _leitura(
-                    f"Metade dos contratos de Norte e Nordeste fica abaixo de **{br(mediana['N+NE'], casas)} {unidade}**, "
-                    f"contra **{br(mediana['Demais'], casas)} {unidade}** nas demais regiões (a mediana, o traço branco "
-                    "na caixa). O histograma mostra onde os contratos se concentram; a caixa vai do 1º ao 3º quartil."
-                )
+            mediana = df.groupby("grupo")[coluna].median()
+            with bloco(
+                f"Metade dos contratos de Norte e Nordeste fica abaixo de **{br(mediana['N+NE'], casas)} {unidade}**, "
+                f"contra **{br(mediana['Demais'], casas)} {unidade}** nas demais regiões (a mediana, o traço branco "
+                "na caixa).",
+                "O histograma mostra onde os contratos se concentram; a caixa vai do 1º ao 3º quartil.",
+                secao=f"{titulo} por grupo: a distribuição inteira",
+            ):
                 dom = g.dominio(pop, coluna)
                 max_y = g.max_proporcao_histograma([pop, amostra], coluna, dom)
                 esquerda, direita = st.columns(2, gap="medium")
@@ -640,13 +853,14 @@ def painel_descritivo(pop: pd.DataFrame, amostra: pd.DataFrame, qual: str, ibge:
                                       legenda=(f"{base}. Pontos: contratos fora dos bigodes.",)))
                 numeros(tabela_descritiva(pop, comparar, coluna), aberto=True)
 
-        with bloco("Setor dos contratos em cada grupo"):
-            infra = df.groupby("grupo")["setor"].apply(lambda s: (s == "Infraestrutura").mean())
-            _leitura(
-                f"Infraestrutura é **{pct(infra['N+NE'], 0)} dos contratos de Norte e Nordeste** e "
-                f"{pct(infra['Demais'], 0)} nas demais regiões. Obras de infraestrutura têm prazos longos por natureza, "
-                "então parte da diferença de prazo pode vir do setor, não da região (limitação 4 do Painel 3)."
-            )
+        infra = df.groupby("grupo")["setor"].apply(lambda s: (s == "Infraestrutura").mean())
+        with bloco(
+            f"Infraestrutura é **{pct(infra['N+NE'], 0)} dos contratos de Norte e Nordeste** e "
+            f"{pct(infra['Demais'], 0)} nas demais regiões.",
+            "Obras de infraestrutura têm prazos longos por natureza, então parte da diferença de prazo pode vir do "
+            "setor, não da região (limitação 4 do Painel 3).",
+            secao="Setor dos contratos em cada grupo",
+        ):
             grafico(g.barras_setor(df, "Setor dentro de cada grupo", legenda=(f"{base}. Cada grupo soma 100%.",)))
             numeros(tabela_qualitativa_por_grupo(pop, comparar, "setor", "Setor"),
                     tabela_qualitativa_por_grupo(pop, comparar, "porte", "Porte"),
@@ -654,19 +868,20 @@ def painel_descritivo(pop: pd.DataFrame, amostra: pd.DataFrame, qual: str, ibge:
 
     # ---------------------------------------------------------------- Qualidade
     with aba_qualidade:
-        with bloco():
-            q = _contar_qualidade(df)
-            sem = q["Sem spread em reais (fora de H3 e H4)"]
-            _leitura(
-                f"**{inteiro(sem)} contratos ({pct(sem / q['Contratos'])}) não têm subcrédito indexado em reais** e ficam "
-                "fora do spread (H3, H4 e a descritiva do spread), mas continuam em H1, H2 e H5. Spreads e prazos iguais "
-                "a 0, que parecem erro de registro, foram mantidos (limitação 5 do Painel 3)."
-            )
+        q = _contar_qualidade(df)
+        sem = q["Sem spread em reais (fora de H3 e H4)"]
+        with bloco(
+            f"**{inteiro(sem)} contratos ({pct(sem / q['Contratos'])}) não têm subcrédito indexado em reais** e ficam "
+            "fora do spread (H3, H4 e a descritiva do spread), mas continuam em H1, H2 e H5.",
+            "Spreads e prazos iguais a 0, que parecem erro de registro, foram mantidos (limitação 5 do Painel 3).",
+        ):
             cartoes([
-                {"rotulo": "Contratos", "valor": inteiro(q["Contratos"])},
-                {"rotulo": "Sem spread em reais", "valor": inteiro(sem), "ajuda": "Ficam fora de H3 e H4."},
-                {"rotulo": "Spread = 0", "valor": inteiro(q["Spread = 0"]), "ajuda": "Mantidos (limitação 5)."},
-                {"rotulo": "Prazo de amortização = 0", "valor": inteiro(q["Prazo de amortização = 0"]),
+                {"rotulo": "Contratos", "valor": inteiro(q["Contratos"]), "sub": base},
+                {"rotulo": "Sem spread em reais", "valor": inteiro(sem), "sub": "ficam fora de H3 e H4",
+                 "ajuda": "Ficam fora de H3 e H4."},
+                {"rotulo": "Spread = 0", "valor": inteiro(q["Spread = 0"]), "sub": "mantidos (limitação 5)",
                  "ajuda": "Mantidos (limitação 5)."},
+                {"rotulo": "Prazo de amortização = 0", "valor": inteiro(q["Prazo de amortização = 0"]),
+                 "sub": "mantidos (limitação 5)", "ajuda": "Mantidos (limitação 5)."},
             ])
             numeros(tabela_qualidade(pop, comparar), rotulo="Ver os números por grupo")
