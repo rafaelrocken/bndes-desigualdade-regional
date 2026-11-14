@@ -141,6 +141,24 @@ def test_base_tabelas_de_texto_longo_nao_cortam():
     assert "TAXA FIXA EM US$" not in interativas.replace("\\$", "$")
 
 
+def test_base_usa_as_palavras_do_video():
+    """Ajustes de linguagem da revisão do vídeo: as Diretrizes no topo, "três indicadores, que
+    chamamos de réguas", as variáveis centrais separadas das de apoio e a prova pública primeiro."""
+    at = _rodar("paginas/base.py")
+    topo = _cabecalho(at)
+    assert "Diretrizes Estratégicas 2026–2030" in topo and "redução das desigualdades" in topo
+    assert "três indicadores, que chamamos de réguas" in topo
+    assert any(s.value == "Três indicadores, que chamamos de réguas" for s in at.subheader)
+    variaveis = next(t.value for t in at.table if "Papel" in t.value.columns)
+    papeis = variaveis["Papel"].tolist()
+    assert papeis.count("central, nos testes") == 3 and papeis.count("de apoio, na descrição") == 4
+    centrais = variaveis.loc[variaveis["Papel"] == "central, nos testes", "Variável"].tolist()
+    assert centrais == ["regiao, uf", "spread", "prazo_amortizacao"]
+    texto = " ".join(m.value for m in at.markdown)
+    item = texto[texto.index("**Pré-registro:**"):]
+    assert item.index("GitHub") < item.index("fd7f39a") < item.index("repositório local")
+
+
 def test_painel_2_fala_do_valor():
     """A frase de semelhança cobre também o valor, onde estão as maiores diferenças."""
     at = _rodar("paginas/amostra.py")

@@ -50,8 +50,9 @@ p0_pib, p0_pop = (h["p0_ou_delta0"] for h in c.HIPOTESES[:2])
 cabecalho(
     "Base de dados e amostra",
     TITULO_APP,
-    "O BNDES diz trabalhar pela redução das desigualdades regionais. Este trabalho mede essa promessa nos "
-    f"**{inteiro(N)} contratos** do próprio banco, com três réguas:",
+    "Nas Diretrizes Estratégicas 2026–2030, o BNDES declara trabalhar pela \"redução das desigualdades "
+    f"sociais e regionais\". Este trabalho mede essa promessa nos **{inteiro(N)} contratos** do próprio banco, "
+    "com três indicadores, que chamamos de réguas:",
 )
 # Os três cartões das réguas, no desenho dos cartões de indicador: o nome, a referência em
 # número grande, a pergunta e o teste que a responde.
@@ -87,8 +88,7 @@ cartoes([
      "sub": "colunas do arquivo do BNDES", "ajuda": "Colunas do arquivo do BNDES."},
 ])
 st.markdown(
-    "O BNDES declara, na sua missão e nas Diretrizes Estratégicas 2026–2030, que trabalha pela "
-    "\"redução das desigualdades sociais e regionais\". Este trabalho testa essa promessa com a base "
+    "A promessa, que o BNDES também põe na sua missão, é testada com a base "
     "pública de operações não automáticas do banco, comparando o **Norte e Nordeste** (nas tabelas, N+NE) com as "
     "**demais regiões** (Centro-Oeste, Sudeste e Sul). Como a população inteira está disponível, "
     "os parâmetros verdadeiros são calculados nela, e a inferência usa só a amostra: no Painel 3 "
@@ -102,7 +102,10 @@ partes = {
 }
 x_nne = int((amostra["grupo"] == "N+NE").sum())
 
-st.subheader("Três réguas de \"forma justa\"")
+st.subheader("Três indicadores, que chamamos de réguas")
+st.markdown(
+    "Cada régua diz qual seria a parte \"justa\" do Norte e Nordeste no crédito do banco, e um teste a confere."
+)
 st.markdown(
     f"""
 | Régua | Pergunta | Referência e fonte | Teste |
@@ -156,17 +159,19 @@ st.markdown("**Variáveis usadas**")
 tabela_estatica(
     pd.DataFrame(
         [
-            ("grupo (N+NE ou Demais)", "qualitativa nominal", "evento de interesse de H1 e H2 (o contrato ser N+NE) e divisão dos grupos em H3 a H5"),
-            ("regiao, uf", "qualitativa nominal", "onde está o contrato: a UF com a maior parte do valor e a sua região"),
-            ("spread", "quantitativa contínua (% ao ano)", "juros acima do custo financeiro; H3 e H4"),
-            ("prazo_amortizacao", "quantitativa contínua (meses)", "prazo para pagar o principal; H5"),
-            ("valor_contratado", "quantitativa contínua (R$)", "tamanho do contrato; leitura por valor (limitação 1)"),
-            ("setor", "qualitativa nominal", "setor do BNDES (infraestrutura, indústria, comércio e serviços, agropecuária); composição dos grupos"),
-            ("porte", "qualitativa ordinal", "porte do cliente (micro a grande); composição dos grupos"),
+            ("central, nos testes", "regiao, uf", "qualitativa nominal", "onde está o contrato: a UF com a maior parte do valor e a sua região; define os grupos de H1 a H5"),
+            ("central, nos testes", "spread", "quantitativa contínua (% ao ano)", "juros acima do custo financeiro; H3 e H4"),
+            ("central, nos testes", "prazo_amortizacao", "quantitativa contínua (meses)", "prazo para pagar o principal; H5"),
+            ("de apoio, na descrição", "grupo (N+NE ou Demais)", "qualitativa nominal", "derivada da região: o evento de interesse de H1 e H2 (o contrato ser N+NE) e a divisão dos grupos em H3 a H5"),
+            ("de apoio, na descrição", "valor_contratado", "quantitativa contínua (R$)", "tamanho do contrato; leitura por valor (limitação 1)"),
+            ("de apoio, na descrição", "setor", "qualitativa nominal", "setor do BNDES (infraestrutura, indústria, comércio e serviços, agropecuária); composição dos grupos"),
+            ("de apoio, na descrição", "porte", "qualitativa ordinal", "porte do cliente (micro a grande); composição dos grupos"),
         ],
-        columns=["Variável", "Tipo", "Significado e papel no trabalho"],
+        columns=["Papel", "Variável", "Tipo", "Significado"],
     )
 )
+st.caption("As variáveis centrais são três: região, spread e prazo de amortização, usadas nos testes. "
+           "As outras quatro apoiam a descrição; o grupo é derivado da região.")
 
 st.markdown("**Regras de agregação** (como vários subcréditos viram um contrato)")
 tabela_estatica(
@@ -216,7 +221,7 @@ st.markdown(
     f"""
 - **Amostragem aleatória simples sem reposição:** todo contrato tem a mesma chance de ser sorteado e nenhum entra duas vezes. A população é ordenada pelo número do contrato e sorteada com `sample(n={n}, replace=False, random_state={meta["semente"]})` do pandas.
 - **Semente: {meta["semente"]}** (a data do sorteio). Com a mesma semente, qualquer pessoa repete o mesmo sorteio.
-- **Pré-registro:** as cinco hipóteses, o nível de significância e a semente foram gravados no commit `{meta["commit_pre_registro"][:7]}` em 12/11/2026, às 13h25, no repositório local do curso, **antes** do sorteio. Esse repositório não é público; a prova pública está neste: as hipóteses entraram no commit [`{COMMIT_HIPOTESES[:7]}`]({REPOSITORIO}/commit/{COMMIT_HIPOTESES}) (12/11/2026, 13h44) e o sorteio, no commit [`{COMMIT_SORTEIO[:7]}`]({REPOSITORIO}/commit/{COMMIT_SORTEIO}) (13h49). Assim o resultado do sorteio não pôde influenciar as hipóteses.
+- **Pré-registro:** a prova pública está no GitHub, no repositório deste app: as hipóteses entraram no commit [`{COMMIT_HIPOTESES[:7]}`]({REPOSITORIO}/commit/{COMMIT_HIPOTESES}) em 12/11/2026, às 13h44, e o sorteio, no commit [`{COMMIT_SORTEIO[:7]}`]({REPOSITORIO}/commit/{COMMIT_SORTEIO}), às 13h49, **depois** das hipóteses. Assim o resultado do sorteio não pôde influenciar as hipóteses. Antes disso, às 13h25, as hipóteses, o nível de significância e a semente já estavam no commit `{meta["commit_pre_registro"][:7]}` do repositório local do curso, que não é público.
 - **Resultado:** {inteiro(len(amostra))} contratos, {inteiro(contagem["N+NE"])} no Norte e Nordeste e {inteiro(contagem["Demais"])} nas demais regiões.
 """
 )
